@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useAuth } from '../lib/auth.jsx'
 import { Banner, Button, TextInput } from '../components/ui/index.jsx'
 
 export default function LoginView() {
+  const { urlFout } = useAuth()
   const [email,     setEmail]     = useState('')
   const [bezig,     setBezig]     = useState(false)
   const [verstuurd, setVerstuurd] = useState(false)
@@ -43,6 +45,12 @@ export default function LoginView() {
             <p className="text-slate-400 text-xs mt-1">CPQ Model Dependency Tracker</p>
           </div>
         </div>
+
+        {urlFout && (
+          <div className="mb-3">
+            <Banner ok={false}>Inloggen via de link mislukte: {urlFout}</Banner>
+          </div>
+        )}
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
           {verstuurd ? (
