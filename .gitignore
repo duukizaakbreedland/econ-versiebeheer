@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# Bevat de Supabase-sleutels
+.env
+.env.local
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Klantgegevens en werkmateriaal — de repo is openbaar, dit hoort er niet in
+Overzicht modellen.xlsx
+Prompt Duuk
+Prompt Verbeterd door AI
+Voorbeeld Git Branching*
+supabase/seed.sql
