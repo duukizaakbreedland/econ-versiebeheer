@@ -4,6 +4,7 @@ import GraphView from './views/GraphView.jsx'
 import ReleaseView from './views/ReleaseView.jsx'
 import BeheerView from './views/BeheerView.jsx'
 import LoginView from './views/LoginView.jsx'
+import WachtwoordWijzigen from './components/WachtwoordWijzigen.jsx'
 import { useChains } from './hooks/useChains.js'
 import { useAuth, signOut } from './lib/auth.jsx'
 
@@ -54,6 +55,7 @@ function IconHistory({ c = 'w-4 h-4' }) {
 export default function App() {
   const [activeTab,     setActiveTab]     = useState('overzicht')
   const [selectedChain, setSelectedChain] = useState(null)
+  const [wachtwoordOpen, setWachtwoordOpen] = useState(false)
   const { session, loading: authLoading } = useAuth()
   const { chains, loading, error, refresh } = useChains(session ? 'buva' : null)
 
@@ -74,7 +76,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">
-      <Header loading={loading} error={error} onRefresh={refresh} email={session.user?.email} />
+      <Header loading={loading} error={error} onRefresh={refresh}
+        email={session.user?.email} onWachtwoord={() => setWachtwoordOpen(true)} />
+      {wachtwoordOpen && (
+        <WachtwoordWijzigen email={session.user?.email} onClose={() => setWachtwoordOpen(false)} />
+      )}
       <Tabs active={activeTab} onChange={setActiveTab} />
       <main className="flex-1 overflow-hidden">
         {activeTab === 'overzicht' && <OverzichtView chains={chains} loading={loading} error={error} onBekijkGraph={navigateToGraph} />}
@@ -86,7 +92,7 @@ export default function App() {
   )
 }
 
-function Header({ loading, error, onRefresh, email }) {
+function Header({ loading, error, onRefresh, email, onWachtwoord }) {
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -115,6 +121,14 @@ function Header({ loading, error, onRefresh, email }) {
           <>
             <span className="w-px h-4 bg-slate-700" />
             <span className="text-slate-500 text-xs max-w-[14rem] truncate" title={email}>{email}</span>
+            <button onClick={onWachtwoord}
+              className="text-slate-500 hover:text-slate-200 transition-colors"
+              title="Wachtwoord wijzigen">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </button>
             <button onClick={signOut}
               className="text-slate-500 hover:text-slate-200 transition-colors"
               title="Uitloggen">
