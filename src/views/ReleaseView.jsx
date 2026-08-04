@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { fetchReleases, rollbackDeployment, updateDeploymentLog } from '../lib/api.js'
-import { InlineEdit, ConfirmButton, Banner } from '../components/ui/index.jsx'
+import { fetchReleases, updateDeploymentLog } from '../lib/api.js'
+import { InlineEdit, Banner } from '../components/ui/index.jsx'
 
 const ENV_CFG = {
   PROD: { color: '#22c55e', bg: '#052e16', border: '#166534' },
@@ -45,10 +45,6 @@ function LogEntry({ log, onChanged, onError }) {
           <span className="ml-auto text-slate-600 text-xs flex-shrink-0">
             {deployed.length} model{deployed.length !== 1 ? 'len' : ''}
           </span>
-          <ConfirmButton confirmLabel="Definitief terugdraaien?" disabled={busy}
-            onConfirm={() => run(() => rollbackDeployment({ logId: log.id }))}>
-            Terugdraaien
-          </ConfirmButton>
           <button onClick={() => setOpen(o => !o)}
             className="text-slate-600 hover:text-slate-400 transition-colors shrink-0"
             title="Details">
@@ -97,9 +93,7 @@ function LogEntry({ log, onChanged, onError }) {
           </div>
 
           <div className="text-slate-600 text-xs pt-1 border-t border-slate-700/60">
-            Terugdraaien zet {replaced.length > 0
-              ? <>de vervangen versie{replaced.length !== 1 ? 's' : ''} terug</>
-              : 'de omgeving terug naar de stand van vóór deze release'} en verwijdert deze regel.
+            Terugdraaien doe je bij het model zelf, in de Dependency Graph.
           </div>
         </div>
       )}

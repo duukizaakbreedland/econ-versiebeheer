@@ -159,6 +159,55 @@ export async function fetchModelVersions(modelId) {
   }))
 }
 
+// ─── Promoties van één model ──────────────────────────────────────────────────
+// Per omgeving de meest recente promotie, met wat er verving en wat vervangen
+// werd. Alleen de nieuwste per omgeving is terug te draaien; oudere staan er
+// als historie bij.
+export async function fetchPromotiesVoorModel(modelId) {
+  const { data: mvs } = await supabase
+    .from('model_versions').select('id, version').eq('model_id', modelId)
+  if (!mvs?.length) return []
+
+  const versiePerId = Object.fromEntries(mvs.map(m => [m.id, m.version]))
+
+  const { data: regels, error } = await supabase
+    .from('deployment_log_versions')
+    .select(`role, model_version_id,
+             deployment_logs ( id, deployed_at, ticket, environments ( name ) )`)
+    .in('model_version_id', mvs.map(m => m.id))
+  throwIf(error)
+
+  const perLog = {}
+  for (const r of regels ?? []) {
+    const log = r.deployment_logs
+    if (!log) continue
+    if (!perLog[log.id]) {
+      perLog[log.id] = {
+        logId: log.id,
+        env: log.environments?.name,
+        wanneer: log.deployed_at,
+        ticket: log.ticket,
+        naar: null,
+        van: null,
+      }
+    }
+    if (r.role === 'DEPLOYED') perLog[log.id].naar = versiePerId[r.model_version_id]
+    else                       perLog[log.id].van  = versiePerId[r.model_version_id]
+  }
+
+  const alles = Object.values(perLog)
+    .filter(p => p.naar)
+    .sort((a, b) => new Date(b.wanneer) - new Date(a.wanneer))
+
+  // De nieuwste per omgeving mag terug
+  const gezien = new Set()
+  return alles.map(p => {
+    const nieuwste = !gezien.has(p.env)
+    gezien.add(p.env)
+    return { ...p, terugTeDraaien: nieuwste }
+  })
+}
+
 // ─── Werk item status bijwerken bij promotie ──────────────────────────────────
 async function bumpWorkItemStatus(modelVersionId, toEnv) {
   const newStatus = toEnv === 'PROD' ? 'DONE' : toEnv === 'ACC' ? 'REVIEW' : null

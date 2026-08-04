@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
   updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
+  fetchPromotiesVoorModel, rollbackDeployment,
 } from '../lib/api.js'
 import { Section, Banner, InlineEdit, ConfirmButton, Select } from './ui/index.jsx'
 import NodeActions from './NodeActions.jsx'
@@ -353,6 +354,58 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
   )
 }
 
+// ─── Promoties van dit model, met terugdraaien ────────────────────────────────
+function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
+  const [rijen, setRijen] = useState(null)
+  const [busy,  setBusy]  = useState(false)
+
+  useEffect(() => {
+    let weg = false
+    fetchPromotiesVoorModel(modelId)
+      .then(r => { if (!weg) setRijen(r) })
+      .catch(e => onError(e.message))
+    return () => { weg = true }
+  }, [modelId, refreshKey])
+
+  if (!rijen || rijen.length === 0) return null
+
+  async function draaiTerug(logId) {
+    setBusy(true)
+    try { await rollbackDeployment({ logId }); await onChanged() }
+    catch (e) { onError(e.message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Section title="Promoties">
+      <div className="space-y-1">
+        {rijen.slice(0, 5).map(p => (
+          <div key={p.logId}
+            className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-1.5">
+            <span className="text-xs font-bold shrink-0" style={{ color: ENV_COLOR[p.env] }}>{p.env}</span>
+            {p.van && <span className="font-mono text-slate-600 text-xs line-through">{p.van}</span>}
+            <span className="text-slate-600 text-xs">→</span>
+            <span className="font-mono text-slate-200 text-xs">{p.naar}</span>
+            <span className="text-slate-600 text-xs ml-auto shrink-0"
+              title={new Date(p.wanneer).toLocaleString('nl-NL')}>
+              {new Date(p.wanneer).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' })}
+            </span>
+            {p.terugTeDraaien && (
+              <ConfirmButton confirmLabel="Terugdraaien?" disabled={busy}
+                onConfirm={() => draaiTerug(p.logId)}>
+                Terug
+              </ConfirmButton>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-slate-600 text-xs mt-1.5">
+        Alleen de laatste promotie per omgeving is terug te draaien.
+      </p>
+    </Section>
+  )
+}
+
 // ─── Historie-sectie ──────────────────────────────────────────────────────────
 function HistorieSectie({ modelId, refreshKey, onError }) {
   const [rows, setRows] = useState(null)
@@ -494,6 +547,24 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
           )}
         </Section>
 
+        {/* Wat je met dit model kunt doen — direct onder de stand */}
+        {isModel && (
+          <NodeActions
+            modelName={d.label}
+            modelId={d.modelId}
+            versions={d.versions}
+            onRefresh={handleChanged}
+          />
+        )}
+
+        {/* Wat er al gepromoveerd is, en wat daarvan terug kan */}
+        {isModel && (
+          <PromotieSectie
+            modelId={d.modelId} refreshKey={refreshKey}
+            onChanged={handleChanged} onError={setErr}
+          />
+        )}
+
         {/* Werk */}
         {isModel && (
           <WerkSectie workItem={d.workItem} onChanged={handleChanged} onError={setErr} />
@@ -507,16 +578,6 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
 
         {/* Versiehistorie */}
         {isModel && <HistorieSectie modelId={d.modelId} refreshKey={refreshKey} onError={setErr} />}
-
-        {/* Acties */}
-        {isModel && (
-          <NodeActions
-            modelName={d.label}
-            modelId={d.modelId}
-            versions={d.versions}
-            onRefresh={handleChanged}
-          />
-        )}
       </div>
     </aside>
   )

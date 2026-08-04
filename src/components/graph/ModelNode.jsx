@@ -28,16 +28,16 @@ export default function ModelNode({ data, selected }) {
   )
   const afwijkend = ENVS.some(e => ['voor', 'achter', 'anders'].includes(statussen[e]))
 
+  // Gedeeld zijn is normaal en verdient geen randkleur; dat vertelt de badge
+  // onderin al. De rand is voor de versiestatus.
   const loopAchter = statussen.ACC === 'achter' || statussen.TST === 'achter'
   const border = mistExport  ? '#ef4444'
                : loopAchter  ? ACHTER
-               : isShared    ? '#a855f7'
                : statussen.ACC === 'voor' ? ENV_KLEUR.ACC
                : statussen.TST === 'voor' ? ENV_KLEUR.TST
                : afwijkend   ? ANDERS
                : '#334155'
   const glow   = mistExport ? '0 0 0 1px #ef444455'
-               : isShared   ? '0 0 0 1px #a855f744'
                : afwijkend  ? `0 0 0 1px ${border}44`
                : 'none'
 
