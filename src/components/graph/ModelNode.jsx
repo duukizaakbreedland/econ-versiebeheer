@@ -2,12 +2,19 @@ import { Handle, Position } from 'reactflow'
 import { versieStatus, ENVS } from '../../lib/chainUtils.js'
 import { MODEL_W } from './layout.js'
 
-const KLEUR = {
-  gelijk:   '#475569',
-  voor:     '#fbbf24',   // nieuwer dan productie
-  achter:   '#f97316',   // ouder dan productie
-  anders:   '#a855f7',   // niet te vergelijken versienummers
-  onbekend: '#475569',
+// Loopt een omgeving voor, dan krijgt hij zijn eigen kleur — zo zie je meteen
+// hóé ver iets is doorgezet. Achterlopen is altijd oranje, want dat is de
+// situatie die aandacht vraagt.
+const ENV_KLEUR = { PROD: '#22c55e', ACC: '#60a5fa', TST: '#fbbf24' }
+const ACHTER    = '#f97316'
+const ANDERS    = '#a855f7'
+const NEUTRAAL  = '#475569'
+
+function kleurVan(env, status) {
+  if (status === 'voor')   return ENV_KLEUR[env]
+  if (status === 'achter') return ACHTER
+  if (status === 'anders') return ANDERS
+  return NEUTRAAL
 }
 
 const TEKEN = { voor: '↑', achter: '↓', anders: '≠' }
@@ -21,10 +28,13 @@ export default function ModelNode({ data, selected }) {
   )
   const afwijkend = ENVS.some(e => ['voor', 'achter', 'anders'].includes(statussen[e]))
 
-  const border = mistExport ? '#ef4444'
-               : isShared   ? '#a855f7'
-               : statussen.ACC === 'achter' || statussen.TST === 'achter' ? '#f97316'
-               : afwijkend  ? '#fbbf24'
+  const loopAchter = statussen.ACC === 'achter' || statussen.TST === 'achter'
+  const border = mistExport  ? '#ef4444'
+               : loopAchter  ? ACHTER
+               : isShared    ? '#a855f7'
+               : statussen.ACC === 'voor' ? ENV_KLEUR.ACC
+               : statussen.TST === 'voor' ? ENV_KLEUR.TST
+               : afwijkend   ? ANDERS
                : '#334155'
   const glow   = mistExport ? '0 0 0 1px #ef444455'
                : isShared   ? '0 0 0 1px #a855f744'
@@ -55,7 +65,7 @@ export default function ModelNode({ data, selected }) {
         {ENVS.map(env => {
           const v      = data.versions[env]
           const st     = statussen[env]
-          const kleur  = KLEUR[st]
+          const kleur  = kleurVan(env, st)
           const opvall = st !== 'gelijk' && st !== 'onbekend'
           return (
             <div key={env} style={{

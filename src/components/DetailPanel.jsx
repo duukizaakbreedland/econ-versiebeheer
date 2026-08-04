@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { versieStatus, statusSamenvatting } from '../lib/chainUtils.js'
+import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
   updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
 } from '../lib/api.js'
@@ -54,6 +54,55 @@ function useResizableWidth() {
 }
 
 // ─── Omgevingsrij ─────────────────────────────────────────────────────────────
+// ─── Doorstroom TST → ACC → PROD ──────────────────────────────────────────────
+// Laat in één oogopslag zien hoe ver de nieuwste versie is doorgezet.
+function Doorstroom({ versions }) {
+  const stappen = ['TST', 'ACC', 'PROD']
+  const nieuwste = [...stappen]
+    .map(e => versions[e])
+    .filter(Boolean)
+    .sort((a, b) => (vergelijkVersies(a, b) ?? 0))
+    .pop()
+
+  if (!nieuwste) return null
+
+  const heeft = e => versions[e] && vergelijkVersies(versions[e], nieuwste) === 0
+  const achterstand = stappen.filter(e => !heeft(e))
+
+  return (
+    <div className="mb-2">
+      <div className="flex items-center gap-1">
+        {stappen.map((env, i) => (
+          <div key={env} className="flex items-center gap-1 min-w-0">
+            {i > 0 && (
+              <svg className={`w-3 h-3 shrink-0 ${heeft(stappen[i - 1]) && !heeft(env) ? 'text-slate-400' : 'text-slate-700'}`}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            )}
+            <div className="rounded px-1.5 py-1 text-center min-w-0"
+              style={heeft(env)
+                ? { background: ENV_COLOR[env] + '22', boxShadow: `inset 0 0 0 1px ${ENV_COLOR[env]}66` }
+                : { background: '#0f172a', boxShadow: 'inset 0 0 0 1px #334155' }}>
+              <div className="text-xs font-bold leading-none"
+                style={{ color: heeft(env) ? ENV_COLOR[env] : '#64748b' }}>{env}</div>
+              <div className="font-mono text-xs mt-0.5 leading-none"
+                style={{ color: heeft(env) ? '#e2e8f0' : '#64748b' }}>
+                {versions[env] ?? '—'}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-slate-500 text-xs mt-1.5">
+        {achterstand.length === 0
+          ? <>Overal <span className="font-mono text-slate-300">{nieuwste}</span></>
+          : <><span className="font-mono text-slate-300">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
+      </div>
+    </div>
+  )
+}
+
 const STATUS_TEKST = {
   voor:   { tekst: '↑ nieuwer dan PROD', kleur: '#fbbf24' },
   achter: { tekst: '↓ ouder dan PROD',   kleur: '#f97316' },
@@ -424,6 +473,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
 
         {/* Versies zoals ze in deze keten worden aangeroepen */}
         <Section title="Versies in deze keten">
+          <Doorstroom versions={d.versions} />
           <div className="bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
             {ENV_ORDER.map(naam => (
               <EnvRow

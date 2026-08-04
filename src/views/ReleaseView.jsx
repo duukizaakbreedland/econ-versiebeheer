@@ -45,8 +45,13 @@ function LogEntry({ log, onChanged, onError }) {
           <span className="ml-auto text-slate-600 text-xs flex-shrink-0">
             {deployed.length} model{deployed.length !== 1 ? 'len' : ''}
           </span>
+          <ConfirmButton confirmLabel="Definitief terugdraaien?" disabled={busy}
+            onConfirm={() => run(() => rollbackDeployment({ logId: log.id }))}>
+            Terugdraaien
+          </ConfirmButton>
           <button onClick={() => setOpen(o => !o)}
-            className="text-slate-600 hover:text-slate-400 transition-colors">
+            className="text-slate-600 hover:text-slate-400 transition-colors shrink-0"
+            title="Details">
             <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
               fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M6 9l6 6 6-6"/>
@@ -54,36 +59,34 @@ function LogEntry({ log, onChanged, onError }) {
           </button>
         </div>
 
-        {/* Modellen + versies meteen zichtbaar */}
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {deployed.map((v, i) => (
-            <span key={i}
-              className="inline-flex items-baseline gap-1.5 bg-slate-900/70 border border-slate-700/60
-                         rounded-md px-2 py-1 text-xs">
-              <span className="text-slate-300">{v.model_versions?.models?.name}</span>
-              <span className="font-mono text-slate-500">{v.model_versions?.version}</span>
-            </span>
-          ))}
+        {/* Wat er verving wat, meteen zichtbaar */}
+        <div className="mt-2 space-y-1">
+          {deployed.map((v, i) => {
+            const oud = replaced.find(
+              r => r.model_versions?.models?.name === v.model_versions?.models?.name)
+            return (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="text-slate-300 truncate">{v.model_versions?.models?.name}</span>
+                {oud && (
+                  <>
+                    <span className="font-mono text-slate-600 line-through">{oud.model_versions?.version}</span>
+                    <svg className="w-3 h-3 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                  </>
+                )}
+                <span className="font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: cfg.bg, color: cfg.color }}>
+                  {v.model_versions?.version}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </div>
 
       {open && (
         <div className="border-t border-slate-700 px-4 py-3 space-y-3">
-          {replaced.length > 0 && (
-            <div>
-              <div className="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1.5">Vervangen</div>
-              <div className="space-y-1">
-                {replaced.map((v, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className="text-slate-700">↓</span>
-                    <span className="text-slate-600">{v.model_versions?.models?.name}</span>
-                    <span className="font-mono text-slate-700 ml-auto line-through">{v.model_versions?.version}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div>
             <div className="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1.5">Notitie</div>
             <div className="text-xs">
@@ -93,16 +96,10 @@ function LogEntry({ log, onChanged, onError }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1 border-t border-slate-700/60">
-            <span className="text-slate-600 text-xs">
-              Terugdraaien zet de vervangen versies terug en verwijdert deze regel.
-            </span>
-            <div className="ml-auto">
-              <ConfirmButton confirmLabel="Definitief terugdraaien?" disabled={busy}
-                onConfirm={() => run(() => rollbackDeployment({ logId: log.id }))}>
-                Terugdraaien
-              </ConfirmButton>
-            </div>
+          <div className="text-slate-600 text-xs pt-1 border-t border-slate-700/60">
+            Terugdraaien zet {replaced.length > 0
+              ? <>de vervangen versie{replaced.length !== 1 ? 's' : ''} terug</>
+              : 'de omgeving terug naar de stand van vóór deze release'} en verwijdert deze regel.
           </div>
         </div>
       )}
