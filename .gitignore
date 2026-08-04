@@ -18,3 +18,7 @@ Prompt Duuk
 Prompt Verbeterd door AI
 Voorbeeld Git Branching*
 supabase/seed.sql
+
+# Python
+__pycache__/
+*.pyc
