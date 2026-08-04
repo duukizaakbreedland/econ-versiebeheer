@@ -146,9 +146,11 @@ function EnvRow({ env, version, eigenVersie, status, mistExport }) {
   )
 }
 
-// ─── Werk-sectie ──────────────────────────────────────────────────────────────
-// Werk ontstaat bij het registreren van een nieuwe versie; hier alleen bijwerken.
-function WerkSectie({ workItem, onChanged, onError }) {
+// ─── Eén werk-item, horend bij een versie ─────────────────────────────────────
+// Werk hangt aan de versie waarvoor het is gedaan en schuift daarmee mee naar
+// ACC en PROD. Zijn er meerdere versies in ontwikkeling, dan zijn er dus ook
+// meerdere werk-items — elk onder zijn eigen versie.
+function WerkRegel({ workItem, onChanged, onError }) {
   const [busy, setBusy] = useState(false)
 
   async function run(fn) {
@@ -158,18 +160,13 @@ function WerkSectie({ workItem, onChanged, onError }) {
     finally { setBusy(false) }
   }
 
-  if (!workItem) return null
-
-  // Afgerond werk blijft zichtbaar, maar rustiger: het hoort bij de versie en
-  // is achteraf nog nuttig om te zien wie wat wanneer heeft gedaan.
   const klaar = workItem.status === 'DONE'
   const kleur = klaar
-    ? { rand: 'border-slate-700 bg-slate-900/50', naam: 'text-slate-300', tekst: 'text-slate-500', label: 'text-slate-600' }
+    ? { rand: 'border-slate-700/60 bg-slate-900/40', naam: 'text-slate-300', tekst: 'text-slate-500', label: 'text-slate-600' }
     : { rand: 'border-amber-800/40 bg-amber-950/30', naam: 'text-amber-300', tekst: 'text-amber-500/90', label: 'text-amber-700' }
 
   return (
-    <Section title="Werk">
-      <div className={`border rounded-lg p-3 space-y-2 ${kleur.rand}`}>
+    <div className={`border rounded-lg p-2.5 space-y-1.5 ${kleur.rand} ${busy ? 'opacity-60' : ''}`}>
         <div className="flex items-center gap-2">
           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
             klaar ? 'bg-slate-600' : 'bg-amber-400 animate-pulse'}`} />
@@ -206,8 +203,7 @@ function WerkSectie({ workItem, onChanged, onError }) {
             </ConfirmButton>
           </div>
         </div>
-      </div>
-    </Section>
+    </div>
   )
 }
 
@@ -406,8 +402,8 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
   )
 }
 
-// ─── Historie-sectie ──────────────────────────────────────────────────────────
-function HistorieSectie({ modelId, refreshKey, onError }) {
+// ─── Versies met het werk dat eraan hangt ─────────────────────────────────────
+function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
   const [rows, setRows] = useState(null)
   const [alles, setAlles] = useState(false)
 
@@ -419,37 +415,64 @@ function HistorieSectie({ modelId, refreshKey, onError }) {
     return () => { cancelled = true }
   }, [modelId, refreshKey])
 
-  if (!rows) return <Section title="Versies"><div className="text-slate-600 text-xs">Laden…</div></Section>
-  if (rows.length === 0) return <Section title="Versies"><div className="text-slate-600 text-xs">Nog geen versies</div></Section>
+  if (!rows) return <Section title="Versies en werk"><div className="text-slate-600 text-xs">Laden…</div></Section>
+  if (rows.length === 0) return <Section title="Versies en werk"><div className="text-slate-600 text-xs">Nog geen versies</div></Section>
 
-  const zichtbaar = alles ? rows : rows.slice(0, 5)
+  // Versies waar werk aan hangt of die ergens draaien eerst; de rest is ruis
+  const metInhoud = rows.filter(r => r.werk.length > 0 || r.envs.length > 0)
+  const zichtbaar = alles ? rows : (metInhoud.length > 0 ? metInhoud : rows.slice(0, 5))
+  const werkTotaal = rows.reduce((n, r) => n + r.werk.length, 0)
 
   return (
-    <Section title={`Versies (${rows.length})`} collapsible defaultOpen>
-      <div className="space-y-1">
+    <Section title={`Versies en werk (${rows.length})`} collapsible defaultOpen>
+      <div className="space-y-2">
         {zichtbaar.map(mv => (
-          <div key={mv.id} className="flex items-center gap-2 text-xs py-0.5">
-            <span className="font-mono text-slate-300">{mv.version}</span>
-            <div className="flex gap-1">
-              {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
-                <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
-                  style={{ background: ENV_COLOR[e] + '20', color: ENV_COLOR[e] }}>
-                  {e}
-                </span>
-              ))}
+          <div key={mv.id}>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-mono text-slate-200">{mv.version}</span>
+              <div className="flex gap-1">
+                {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
+                  <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
+                    style={{ background: ENV_COLOR[e] + '20', color: ENV_COLOR[e] }}>
+                    {e}
+                  </span>
+                ))}
+              </div>
+              <span className="ml-auto text-slate-600">
+                {new Date(mv.created_at).toLocaleDateString('nl-NL',
+                  { day: '2-digit', month: 'short', year: '2-digit' })}
+              </span>
             </div>
-            <span className="ml-auto text-slate-600">
-              {new Date(mv.created_at).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: '2-digit' })}
-            </span>
+
+            {mv.werk.length > 0 && (
+              <div className="mt-1 space-y-1.5 pl-2 border-l border-slate-700/60">
+                {mv.werk.map(w => (
+                  <WerkRegel key={w.id} workItem={w} onChanged={onChanged} onError={onError} />
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
-      {rows.length > 5 && (
-        <button onClick={() => setAlles(a => !a)}
+
+      {rows.length > zichtbaar.length && (
+        <button onClick={() => setAlles(true)}
           className="text-slate-500 hover:text-slate-300 text-xs mt-2 transition-colors">
-          {alles ? 'Toon minder' : `Toon alle ${rows.length}`}
+          Toon alle {rows.length} versies
         </button>
       )}
+      {alles && rows.length > metInhoud.length && (
+        <button onClick={() => setAlles(false)}
+          className="text-slate-500 hover:text-slate-300 text-xs mt-2 transition-colors">
+          Toon minder
+        </button>
+      )}
+
+      <p className="text-slate-600 text-xs mt-2">
+        {werkTotaal === 0
+          ? 'Werk leg je vast bij het registreren van een nieuwe versie.'
+          : 'Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.'}
+      </p>
     </Section>
   )
 }
@@ -565,19 +588,19 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
           />
         )}
 
-        {/* Werk */}
-        {isModel && (
-          <WerkSectie workItem={d.workItem} onChanged={handleChanged} onError={setErr} />
-        )}
-
         {/* Koppelingen — per omgeving te bekijken */}
         <KoppelingenSectie
           node={node} chain={chain} chains={chains} deps={deps}
           onChanged={handleChanged} onError={setErr}
         />
 
-        {/* Versiehistorie */}
-        {isModel && <HistorieSectie modelId={d.modelId} refreshKey={refreshKey} onError={setErr} />}
+        {/* Versies met het werk dat eraan hangt */}
+        {isModel && (
+          <VersiesSectie
+            modelId={d.modelId} refreshKey={refreshKey}
+            onChanged={handleChanged} onError={setErr}
+          />
+        )}
       </div>
     </aside>
   )

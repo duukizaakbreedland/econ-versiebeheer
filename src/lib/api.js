@@ -137,7 +137,9 @@ export async function fetchReleases(orgSlug = 'buva') {
   return data
 }
 
-// ─── Versiehistorie van één model (voor het detailpaneel) ─────────────────────
+// ─── Versies van één model, met het werk dat eraan hangt ──────────────────────
+// Werk hoort bij een versie en schuift daarmee mee van TST naar ACC en PROD.
+// Meerdere versies in ontwikkeling betekent dus meerdere werk-items.
 export async function fetchModelVersions(modelId) {
   const { data: mvData, error } = await supabase
     .from('model_versions')
@@ -146,16 +148,30 @@ export async function fetchModelVersions(modelId) {
     .order('created_at', { ascending: false })
   if (error) throw error
 
+  const ids = mvData.map(mv => mv.id)
+
   const { data: evData } = await supabase
     .from('environment_versions')
     .select('model_version_id, activated_at, environments ( name )')
-    .in('model_version_id', mvData.map(mv => mv.id))
+    .in('model_version_id', ids)
+
+  const { data: wiData } = await supabase
+    .from('work_items')
+    .select('id, model_version_id, consultant, description, ticket, status, created_at')
+    .in('model_version_id', ids)
+    .order('created_at', { ascending: false })
 
   return mvData.map(mv => ({
     ...mv,
     envs: (evData || [])
       .filter(ev => ev.model_version_id === mv.id)
       .map(ev => ({ name: ev.environments.name, activated_at: ev.activated_at })),
+    werk: (wiData || [])
+      .filter(w => w.model_version_id === mv.id)
+      .map(w => ({
+        id: w.id, consultant: w.consultant, note: w.description,
+        ticket: w.ticket, status: w.status, createdAt: w.created_at,
+      })),
   }))
 }
 
