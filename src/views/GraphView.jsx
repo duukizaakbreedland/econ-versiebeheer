@@ -8,6 +8,7 @@ import ModelNode from '../components/graph/ModelNode.jsx'
 import InterfaceNode from '../components/graph/InterfaceNode.jsx'
 import DetailPanel from '../components/DetailPanel.jsx'
 import ChainPromoteForm from '../components/ChainPromoteForm.jsx'
+import KetenMenu from '../components/graph/KetenMenu.jsx'
 
 const NODE_TYPES = { model: ModelNode, interface: InterfaceNode }
 
@@ -102,22 +103,20 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
   return (
     <div className="flex w-full" style={{ height: 'calc(100vh - 110px)' }}>
 
+      {/* Ketenmenu met zoekfunctie */}
+      <KetenMenu chains={chains} actief={chainKey} onKies={setChainKey} />
+
       {/* Graph gebied */}
       <div className="relative flex-1 min-w-0">
 
-        {/* Ketens als losse zwevende knoppen */}
-        <div className="absolute top-4 left-4 right-4 z-10 flex items-start gap-2 flex-wrap">
-          {Object.entries(chains).map(([key, c]) => (
-            <button key={key}
-              onClick={() => setChainKey(key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full border shadow-lg transition-all ${
-                chainKey === key
-                  ? 'bg-blue-600 border-blue-500 text-white shadow-blue-900/40'
-                  : 'bg-slate-800/90 border-slate-700 text-slate-400 hover:text-slate-100 hover:border-slate-500 backdrop-blur-sm'
-              }`}>
-              {c.label}
-            </button>
-          ))}
+        <div className="absolute top-4 left-4 right-4 z-10 flex items-start gap-3">
+          <div className="bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-1.5 shadow-lg
+                          backdrop-blur-sm min-w-0">
+            <div className="text-slate-100 text-xs font-semibold truncate">{chain.label}</div>
+            <div className="text-slate-500 text-xs">
+              {chain.nodes.filter(n => n.type === 'model').length} modellen
+            </div>
+          </div>
           <div className="ml-auto">
             <ChainPromoteForm chainKey={chainKey} chain={chain} onRefresh={onRefresh} />
           </div>
