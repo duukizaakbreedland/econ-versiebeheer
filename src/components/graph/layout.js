@@ -1,5 +1,6 @@
 import dagre from 'dagre'
 import { MarkerType, Position } from 'reactflow'
+import { ENVS } from '../../lib/chainUtils.js'
 
 // ─── Node dimensies ───────────────────────────────────────────────────────────
 export const MODEL_W  = 230
@@ -8,30 +9,40 @@ export const ROW_H    = 20      // extra regel onderin de modelkaart
 export const IFACE_W  = 150
 export const IFACE_H  = 36
 
-// Hoogte hangt af van hoeveel extra regels de kaart toont
 function modelHeight(extras) {
   return MODEL_H + extras * ROW_H
 }
 
-function extraRegels({ workItem, sharedIn, conflict }) {
+function extraRegels({ workItem, sharedIn, ontbreekt }) {
   let n = 0
   if (workItem) n++
   if (sharedIn?.length > 0) n++
-  if (conflict?.length > 0) n++
+  if (ontbreekt?.length > 0) n++
   return n
 }
 
 // ─── Dagre layout ─────────────────────────────────────────────────────────────
-// extra = { conflicts }
+// extra = { ketenVersies }  — per omgeving de versies zoals ze in déze keten
+// worden aangeroepen, plus welke daarvan niet in de export voorkwamen.
 export function applyLayout(rawNodes, rawEdges, chainKey, shared, extra = {}) {
-  const { conflicts = {} } = extra
+  const { ketenVersies = {} } = extra
 
-  const dataVan = n => ({
-    label: n.label, versions: n.versions, versionIds: n.versionIds,
-    workItem: n.workItem, modelId: n.modelId,
-    sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
-    conflict: conflicts[n.modelId],
-  })
+  const dataVan = n => {
+    // De versie zoals de ouder hem in deze keten aanroept; heeft hij geen ouder
+    // (het hoofdmodel), dan zijn eigen versie uit de omgeving.
+    const versions = {}
+    const ontbreekt = []
+    for (const env of ENVS) {
+      const k = ketenVersies[env]
+      versions[env] = k?.versies?.[n.id] ?? n.versions?.[env]
+      if (k?.ontbreekt?.[n.id]) ontbreekt.push(env)
+    }
+    return {
+      label: n.label, versions, eigenVersies: n.versions, versionIds: n.versionIds,
+      workItem: n.workItem, modelId: n.modelId, ontbreekt,
+      sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
+    }
+  }
 
   const hoogteVan = n =>
     n.type === 'interface' ? IFACE_H : modelHeight(extraRegels(dataVan(n)))
@@ -69,7 +80,6 @@ export function applyLayout(rawNodes, rawEdges, chainKey, shared, extra = {}) {
     markerEnd: { type: MarkerType.ArrowClosed, color: '#334155', width: 14, height: 14 },
   }))
 
-  // Bereken panning grens op basis van werkelijke node posities
   let maxX = 0, maxY = 0
   nodes.forEach((n, i) => {
     const w = n.type === 'interface' ? IFACE_W : MODEL_W

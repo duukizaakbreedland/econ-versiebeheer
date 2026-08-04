@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { versionStatus } from '../lib/chainUtils.js'
+import { versieStatus, statusSamenvatting } from '../lib/chainUtils.js'
 import {
-  updateModel, updateVersion, removeVersionFromEnv,
+  updateModel, removeVersionFromEnv,
   updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
 } from '../lib/api.js'
 import { Section, Banner, InlineEdit, Menu, ConfirmButton, Select } from './ui/index.jsx'
@@ -55,35 +55,49 @@ function useResizableWidth() {
 }
 
 // ─── Omgevingsrij ─────────────────────────────────────────────────────────────
-function EnvRow({ env, version, versionId, isAhead, onChanged, onError }) {
+const STATUS_TEKST = {
+  voor:   { tekst: '↑ nieuwer dan PROD', kleur: '#fbbf24' },
+  achter: { tekst: '↓ ouder dan PROD',   kleur: '#f97316' },
+  anders: { tekst: '≠ wijkt af',         kleur: '#a855f7' },
+}
+
+function EnvRow({ env, version, eigenVersie, versionId, status, mistExport, onChanged, onError }) {
   const color = ENV_COLOR[env]
+  const st    = STATUS_TEKST[status]
+  // De versie die het model op zichzelf heeft, kan afwijken van hoe deze keten
+  // hem aanroept — dat is normaal zodra een submodel op meerdere plekken hangt.
+  const eigenAfwijkend = eigenVersie && eigenVersie !== version
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 border-t border-slate-800 first:border-t-0"
-      style={{ background: isAhead ? color + '12' : 'transparent' }}>
+      style={{ background: st ? st.kleur + '12' : 'transparent' }}>
       <span className="text-xs font-bold w-11 shrink-0" style={{ color }}>{env}</span>
 
-      {version ? (
-        <InlineEdit
-          value={version}
-          mono
-          textClass={isAhead ? 'font-bold' : 'text-slate-300'}
-          onSave={async next => {
-            if (!next) return
-            try { await updateVersion({ modelVersionId: versionId, version: next }); await onChanged() }
-            catch (e) { onError(e.message) }
-          }}
-        />
-      ) : (
-        <span className="text-slate-700 text-xs italic">niet actief</span>
-      )}
+      <div className="min-w-0">
+        {version ? (
+          <span className="font-mono text-xs" style={{ color: st ? st.kleur : '#cbd5e1',
+            fontWeight: st ? 700 : 400 }}>
+            {version}
+          </span>
+        ) : (
+          <span className="text-slate-700 text-xs italic">niet actief</span>
+        )}
+        {eigenAfwijkend && (
+          <span className="text-slate-600 text-xs ml-2" title="De versie die dit model op zichzelf heeft">
+            eigen: <span className="font-mono">{eigenVersie}</span>
+          </span>
+        )}
+      </div>
 
-      {isAhead && <span className="text-xs" style={{ color }}>↑ loopt voor</span>}
+      {mistExport && (
+        <span className="text-red-400 text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>
+      )}
+      {st && <span className="text-xs shrink-0" style={{ color: st.kleur }}>{st.tekst}</span>}
 
       <div className="ml-auto">
         <Menu items={[
           versionId && {
-            label: `Uit ${env} halen`,
+            label: `Eigen versie uit ${env} halen`,
             danger: true,
             onClick: async () => {
               try { await removeVersionFromEnv({ modelVersionId: versionId, envName: env }); await onChanged() }
@@ -195,7 +209,6 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
   const d        = node.data
   const kinderen = deps.filter(x => x.env === env && x.parentModelId === d.modelId)
   const ouders   = deps.filter(x => x.env === env && x.childModelId  === d.modelId)
-  const conflict = d.conflict?.find(c => c.env === env)
   const isShared = d.sharedIn?.length > 0
 
   // Terugval op de vaste ketenstructuur zolang er niets is vastgelegd
@@ -230,20 +243,6 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
         </div>
       }>
       <div className="space-y-3">
-        {conflict && (
-          <div className="bg-red-950/40 border border-red-800/50 rounded-lg p-2.5">
-            <div className="text-red-400 text-xs font-semibold mb-1">
-              ⚠ Draait in {env} op meerdere versies tegelijk
-            </div>
-            {conflict.versies.map(c => (
-              <div key={c.version} className="text-xs text-red-300/80 py-0.5">
-                <span className="font-mono">{c.version}</span>
-                <span className="text-red-500/70"> onder {c.parents.join(', ')}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         {ouders.length > 0 && (
           <div>
             <div className="text-slate-600 text-xs mb-1">Wordt aangesproken door</div>
@@ -360,13 +359,10 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
 
   if (!node) return null
 
-  const d  = node.data
-  const vs = versionStatus(d.versions)
-
-  const statusLabel = vs === 'tst-ahead' ? 'TST loopt voor' : vs === 'acc-ahead' ? 'ACC loopt voor' : 'Stabiel'
-  const statusColor = vs === 'tst-ahead' ? '#fbbf24' : vs === 'acc-ahead' ? '#60a5fa' : '#22c55e'
-  const isShared    = d.sharedIn?.length > 0
-  const isModel     = node.type === 'model'
+  const d = node.data
+  const { label: statusLabel, kleur: statusColor } = statusSamenvatting(d.versions)
+  const isShared = d.sharedIn?.length > 0
+  const isModel  = node.type === 'model'
 
   async function handleChanged() {
     setErr(null)
@@ -425,21 +421,29 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {err && <Banner ok={false} onClose={() => setErr(null)}>{err}</Banner>}
 
-        {/* Omgevingen */}
-        <Section title="Omgevingen">
+        {/* Versies zoals ze in deze keten worden aangeroepen */}
+        <Section title="Versies in deze keten">
           <div className="bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
             {ENV_ORDER.map(naam => (
               <EnvRow
                 key={naam}
                 env={naam}
                 version={d.versions[naam]}
+                eigenVersie={d.eigenVersies?.[naam]}
                 versionId={d.versionIds?.[naam]}
-                isAhead={naam !== 'PROD' && d.versions[naam] !== d.versions.PROD}
+                status={naam === 'PROD' ? null : versieStatus(d.versions[naam], d.versions.PROD)}
+                mistExport={d.ontbreekt?.includes(naam)}
                 onChanged={handleChanged}
                 onError={setErr}
               />
             ))}
           </div>
+          {d.ontbreekt?.length > 0 && (
+            <div className="mt-2 text-xs text-red-400/90 bg-red-950/30 border border-red-900/50 rounded-lg px-2.5 py-2">
+              ⚠ Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export
+              van {d.ontbreekt.join(' en ')}.
+            </div>
+          )}
         </Section>
 
         {/* Werk */}

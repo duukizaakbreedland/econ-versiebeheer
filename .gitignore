@@ -11,6 +11,8 @@ dist/
 Thumbs.db
 
 # Klantgegevens en werkmateriaal — de repo is openbaar, dit hoort er niet in
+export/
+_export/
 Overzicht modellen.xlsx
 Prompt Duuk
 Prompt Verbeterd door AI

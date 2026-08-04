@@ -361,7 +361,7 @@ export async function updateDeploymentLog({ id, ticket, notes }) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const DEP_SELECT = `
-  id, environment_id, child_model_id,
+  id, environment_id, child_model_id, child_missing_in_export,
   environments ( name ),
   parent: parent_version_id    ( id, version, model_id, models ( id, name ) ),
   iface:  interface_version_id ( id, version, model_id, models ( id, name ) ),
@@ -394,6 +394,7 @@ export async function fetchDependencies(orgSlug = 'buva') {
     childName:     d.child?.models?.name,
     childVersion:  d.child?.version,
     childVersionId: d.child?.id,
+    ontbreekt:     d.child_missing_in_export,
   }))
 }
 

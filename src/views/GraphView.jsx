@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { getSharedModels, findVersionConflicts } from '../lib/chainUtils.js'
+import { getSharedModels, ketenVersies } from '../lib/chainUtils.js'
 import { useDependencies } from '../hooks/useDependencies.js'
 import { applyLayout } from '../components/graph/layout.js'
 import ModelNode from '../components/graph/ModelNode.jsx'
@@ -35,16 +35,21 @@ export default function GraphView({ initialChain, chains, onRefresh }) {
     }
   }, [initialChain])
 
-  const shared    = useMemo(() => getSharedModels(chains || {}), [chains])
-  const conflicts = useMemo(() => findVersionConflicts(deps), [deps])
+  const shared = useMemo(() => getSharedModels(chains || {}), [chains])
 
   const chain = chains?.[chainKey]
 
+  // Per omgeving de versies zoals ze in déze keten worden aangeroepen
+  const versiesPerEnv = useMemo(
+    () => chain ? ketenVersies(chain, deps) : {},
+    [chain, deps]
+  )
+
   const { nodes: initNodes, edges: initEdges, translateExtent } = useMemo(
     () => chain
-      ? applyLayout(chain.nodes, chain.edges, chainKey, shared, { conflicts })
+      ? applyLayout(chain.nodes, chain.edges, chainKey, shared, { ketenVersies: versiesPerEnv })
       : { nodes: [], edges: [], translateExtent: [[-400,-400],[1200,900]] },
-    [chain, chainKey, shared, conflicts]
+    [chain, chainKey, shared, versiesPerEnv]
   )
 
   async function handleRefresh() {
