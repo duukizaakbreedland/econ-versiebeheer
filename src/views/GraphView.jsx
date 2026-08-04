@@ -88,8 +88,13 @@ export default function GraphView({ initialChain, chains, onRefresh }) {
 
 // Inner component zodat useNodesState opnieuw initialiseert bij het wisselen van keten
 function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initEdges, translateExtent, selected, setSelected, deps, onRefresh }) {
-  const [nodes, , onNodesChange] = useNodesState(initNodes)
-  const [, , onEdgesChange]      = useEdgesState(initEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState(initNodes)
+  const [, , onEdgesChange]              = useEdgesState(initEdges)
+
+  // useNodesState houdt een eigen kopie; zonder deze sync blijft de graph op de
+  // stand van het eerste renderen staan en zie je een nieuwe versie of een pas
+  // geregistreerd werk-item pas na het herladen van de pagina.
+  useEffect(() => { setNodes(initNodes) }, [initNodes, setNodes])
 
   const onNodeClick = useCallback((_, node) => setSelected(node), [])
   const selectedNode = selected ? nodes.find(n => n.id === selected.id) : null

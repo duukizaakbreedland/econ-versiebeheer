@@ -85,17 +85,23 @@ export default function ModelNode({ data, selected }) {
         </div>
       )}
 
-      {data.workItem && (
-        <div style={{ borderTop: '1px solid #1e293b', padding: '4px 10px 5px',
-          display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24', flexShrink: 0 }} />
-          <span style={{ color: '#fbbf24', fontSize: 9, fontWeight: 600 }}>{data.workItem.consultant}</span>
-          <span style={{ color: '#78716c', fontSize: 9,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            — {data.workItem.note}
-          </span>
-        </div>
-      )}
+      {data.workItem && (() => {
+        const klaar = data.workItem.status === 'DONE'
+        return (
+          <div style={{ borderTop: '1px solid #1e293b', padding: '4px 10px 5px',
+            display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              background: klaar ? '#475569' : '#fbbf24' }} />
+            <span style={{ color: klaar ? '#94a3b8' : '#fbbf24', fontSize: 9, fontWeight: 600 }}>
+              {data.workItem.consultant}
+            </span>
+            <span style={{ color: '#78716c', fontSize: 9,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              — {data.workItem.note}
+            </span>
+          </div>
+        )
+      })()}
 
       {isShared && (
         <div style={{ borderTop: '1px solid #1e293b', padding: '4px 10px 5px',

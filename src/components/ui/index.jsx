@@ -159,33 +159,55 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, c
 }
 
 // ─── ⋯ menu ───────────────────────────────────────────────────────────────────
+// Het menu zweeft los van de pagina (position: fixed) zodat het niet wordt
+// afgeknipt door een paneel met overflow, en klapt omhoog als het onderaan
+// het scherm niet past.
 export function Menu({ items }) {
-  const [open, setOpen] = useState(false)
+  const [plek, setPlek] = useState(null)
   const ref = useRef(null)
 
-  useEffect(() => {
-    if (!open) return
-    function onDown(e) { if (!ref.current?.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
   const usable = items.filter(Boolean)
+
+  useEffect(() => {
+    if (!plek) return
+    function sluit(e) { if (!ref.current?.contains(e.target)) setPlek(null) }
+    function opEscape(e) { if (e.key === 'Escape') setPlek(null) }
+    document.addEventListener('mousedown', sluit)
+    document.addEventListener('keydown', opEscape)
+    window.addEventListener('scroll', () => setPlek(null), true)
+    return () => {
+      document.removeEventListener('mousedown', sluit)
+      document.removeEventListener('keydown', opEscape)
+    }
+  }, [plek])
+
   if (usable.length === 0) return null
 
+  const hoogte = usable.length * 30 + 8
+
+  function toggle(e) {
+    if (plek) { setPlek(null); return }
+    const r = e.currentTarget.getBoundingClientRect()
+    const pastOnder = window.innerHeight - r.bottom > hoogte + 12
+    setPlek({
+      top:   pastOnder ? r.bottom + 4 : r.top - hoogte - 4,
+      right: window.innerWidth - r.right,
+    })
+  }
+
   return (
-    <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)}
+    <div ref={ref} className="inline-block">
+      <button onClick={toggle}
         className="text-slate-600 hover:text-slate-300 px-1 leading-none transition-colors"
         title="Meer acties">
         ⋯
       </button>
-      {open && (
-        <div className="absolute right-0 top-6 z-40 w-52 bg-slate-800 border border-slate-600 rounded-lg
-                        shadow-xl overflow-hidden py-1">
+      {plek && (
+        <div style={{ position: 'fixed', top: plek.top, right: plek.right, zIndex: 60 }}
+          className="w-56 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl overflow-hidden py-1">
           {usable.map((item, i) => (
             <button key={i}
-              onClick={() => { setOpen(false); item.onClick() }}
+              onClick={() => { setPlek(null); item.onClick() }}
               disabled={item.disabled}
               className={`w-full text-left px-3 py-1.5 text-xs transition-colors disabled:opacity-40
                           disabled:cursor-not-allowed ${item.danger

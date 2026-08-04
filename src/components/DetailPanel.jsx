@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting } from '../lib/chainUtils.js'
 import {
-  updateModel, removeVersionFromEnv,
-  updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
+  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
 } from '../lib/api.js'
-import { Section, Banner, InlineEdit, Menu, ConfirmButton, Select } from './ui/index.jsx'
+import { Section, Banner, InlineEdit, ConfirmButton, Select } from './ui/index.jsx'
 import NodeActions from './NodeActions.jsx'
 
 const ENV_ORDER = ['PROD', 'ACC', 'TST']
@@ -61,7 +60,7 @@ const STATUS_TEKST = {
   anders: { tekst: '≠ wijkt af',         kleur: '#a855f7' },
 }
 
-function EnvRow({ env, version, eigenVersie, versionId, status, mistExport, onChanged, onError }) {
+function EnvRow({ env, version, eigenVersie, status, mistExport }) {
   const color = ENV_COLOR[env]
   const st    = STATUS_TEKST[status]
   // De versie die het model op zichzelf heeft, kan afwijken van hoe deze keten
@@ -92,20 +91,7 @@ function EnvRow({ env, version, eigenVersie, versionId, status, mistExport, onCh
       {mistExport && (
         <span className="text-red-400 text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>
       )}
-      {st && <span className="text-xs shrink-0" style={{ color: st.kleur }}>{st.tekst}</span>}
-
-      <div className="ml-auto">
-        <Menu items={[
-          versionId && {
-            label: `Eigen versie uit ${env} halen`,
-            danger: true,
-            onClick: async () => {
-              try { await removeVersionFromEnv({ modelVersionId: versionId, envName: env }); await onChanged() }
-              catch (e) { onError(e.message) }
-            },
-          },
-        ]} />
-      </div>
+      {st && <span className="text-xs shrink-0 ml-auto" style={{ color: st.kleur }}>{st.tekst}</span>}
     </div>
   )
 }
@@ -124,13 +110,28 @@ function WerkSectie({ workItem, onChanged, onError }) {
 
   if (!workItem) return null
 
+  // Afgerond werk blijft zichtbaar, maar rustiger: het hoort bij de versie en
+  // is achteraf nog nuttig om te zien wie wat wanneer heeft gedaan.
+  const klaar = workItem.status === 'DONE'
+  const kleur = klaar
+    ? { rand: 'border-slate-700 bg-slate-900/50', naam: 'text-slate-300', tekst: 'text-slate-500', label: 'text-slate-600' }
+    : { rand: 'border-amber-800/40 bg-amber-950/30', naam: 'text-amber-300', tekst: 'text-amber-500/90', label: 'text-amber-700' }
+
   return (
     <Section title="Werk">
-      <div className="bg-amber-950/30 border border-amber-800/40 rounded-lg p-3 space-y-2">
+      <div className={`border rounded-lg p-3 space-y-2 ${kleur.rand}`}>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
-          <InlineEdit value={workItem.consultant} textClass="text-amber-300 text-xs font-semibold"
+          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+            klaar ? 'bg-slate-600' : 'bg-amber-400 animate-pulse'}`} />
+          <InlineEdit value={workItem.consultant} textClass={`${kleur.naam} text-xs font-semibold`}
             onSave={v => run(() => updateWorkItem({ id: workItem.id, consultant: v }))} />
+          {workItem.createdAt && (
+            <span className={`text-xs ${kleur.label}`}
+              title={new Date(workItem.createdAt).toLocaleString('nl-NL')}>
+              {new Date(workItem.createdAt).toLocaleDateString('nl-NL',
+                { day: '2-digit', month: 'short', year: '2-digit' })}
+            </span>
+          )}
           <div className="ml-auto">
             <Select value={workItem.status}
               onChange={e => run(() => updateWorkItem({ id: workItem.id, status: e.target.value }))}>
@@ -140,13 +141,13 @@ function WerkSectie({ workItem, onChanged, onError }) {
         </div>
 
         <div className="text-xs">
-          <InlineEdit value={workItem.note} placeholder="Geen omschrijving" textClass="text-amber-500/90"
+          <InlineEdit value={workItem.note} placeholder="Geen omschrijving" textClass={kleur.tekst}
             onSave={v => run(() => updateWorkItem({ id: workItem.id, description: v }))} />
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-amber-700">Ticket</span>
-          <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass="text-amber-400"
+          <span className={kleur.label}>Ticket</span>
+          <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass={kleur.naam}
             onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
           <div className="ml-auto">
             <ConfirmButton confirmLabel="Verwijderen?"
@@ -430,11 +431,8 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
                 env={naam}
                 version={d.versions[naam]}
                 eigenVersie={d.eigenVersies?.[naam]}
-                versionId={d.versionIds?.[naam]}
                 status={naam === 'PROD' ? null : versieStatus(d.versions[naam], d.versions.PROD)}
                 mistExport={d.ontbreekt?.includes(naam)}
-                onChanged={handleChanged}
-                onError={setErr}
               />
             ))}
           </div>

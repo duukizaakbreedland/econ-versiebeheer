@@ -57,11 +57,12 @@ export async function fetchChains(orgSlug = 'buva') {
   if (versErr) throw versErr
 
   const mvIds = [...new Set(versions.map(v => v.model_version_id))]
+  // Ook afgerond werk ophalen: dat hoort bij de versie en is achteraf nog
+  // relevant om te zien wie wat wanneer heeft gedaan.
   const { data: workItems } = await supabase
     .from('work_items')
-    .select('id, model_version_id, consultant, description, ticket, status')
+    .select('id, model_version_id, consultant, description, ticket, status, created_at')
     .in('model_version_id', mvIds)
-    .in('status', ['IN_PROGRESS', 'REVIEW'])
 
   const versionMap = {}
   const mvIdMap    = {}
@@ -75,7 +76,7 @@ export async function fetchChains(orgSlug = 'buva') {
   for (const wi of (workItems || [])) {
     wiMap[wi.model_version_id] = {
       id: wi.id, consultant: wi.consultant, note: wi.description,
-      ticket: wi.ticket, status: wi.status,
+      ticket: wi.ticket, status: wi.status, createdAt: wi.created_at,
     }
   }
 
