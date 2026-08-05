@@ -434,6 +434,25 @@ export async function deleteModelVersion(modelVersionId) {
   throwIf(error)
 }
 
+// Werk toevoegen aan een versie die er al staat.
+//
+// Registreren via Acties maakt versie én werk in één keer aan, maar dat activeert
+// de versie ook in TST. Voor een versie die er al is — bijvoorbeeld uit de
+// eCon-import — wil je alleen de aantekening. Deze functie raakt daarom
+// environment_versions niet aan.
+export async function addWorkItem({ modelVersionId, consultant, description, ticket, status = 'IN_PROGRESS' }) {
+  const { error } = await supabase
+    .from('work_items')
+    .insert({
+      model_version_id: modelVersionId,
+      consultant,
+      description: description || '',
+      ticket: ticket || null,
+      status,
+    })
+  throwIf(error)
+}
+
 // Werk item bijwerken
 export async function updateWorkItem({ id, consultant, description, ticket, status }) {
   const patch = { updated_at: new Date().toISOString() }

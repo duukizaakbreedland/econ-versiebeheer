@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
-  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, deleteModelVersion,
-  fetchPromotiesVoorModel, rollbackDeployment,
+  updateModel, updateWorkItem, deleteWorkItem, addWorkItem, fetchModelVersions,
+  deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment,
 } from '../lib/api.js'
-import { Section, Banner, InlineEdit, ConfirmButton, Select } from './ui/index.jsx'
+import { useVoornaam } from '../lib/auth.jsx'
+import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput } from './ui/index.jsx'
 import NodeActions from './NodeActions.jsx'
 
 const ENV_ORDER = ['PROD', 'ACC', 'TST']
@@ -370,14 +371,43 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
   )
 }
 
-// ─── Eén versieregel, met de mogelijkheid hem terug te nemen ──────────────────
+// Werk dat je achteraf vastlegt hoort meestal al af te zijn: staat de versie al
+// in PROD, dan is het klaar; staat hij in ACC, dan ligt hij ter review.
+function statusBijEnvs(envs) {
+  if (envs.some(e => e.name === 'PROD')) return 'DONE'
+  if (envs.some(e => e.name === 'ACC'))  return 'REVIEW'
+  return 'IN_PROGRESS'
+}
+
+// ─── Eén versieregel, met werk toevoegen en terugnemen ────────────────────────
 function VersieRegel({ mv, onChanged, onError }) {
-  const [busy, setBusy] = useState(false)
+  const voornaam = useVoornaam()
+
+  const [busy,   setBusy]   = useState(false)
+  const [open,   setOpen]   = useState(false)
+  const [cons,   setCons]   = useState(voornaam)
+  const [note,   setNote]   = useState('')
+  const [ticket, setTicket] = useState('')
+  const [status, setStatus] = useState(() => statusBijEnvs(mv.envs))
 
   async function verwijder() {
     setBusy(true)
     try { await deleteModelVersion(mv.id); await onChanged() }
     catch (e) { onError(e.message) }
+    finally { setBusy(false) }
+  }
+
+  async function voegWerkToe() {
+    if (!cons.trim()) return
+    setBusy(true)
+    try {
+      await addWorkItem({
+        modelVersionId: mv.id, consultant: cons.trim(),
+        description: note.trim(), ticket: ticket.trim(), status,
+      })
+      setNote(''); setTicket(''); setCons(voornaam); setOpen(false)
+      await onChanged()
+    } catch (e) { onError(e.message) }
     finally { setBusy(false) }
   }
 
@@ -397,13 +427,35 @@ function VersieRegel({ mv, onChanged, onError }) {
           {new Date(mv.created_at).toLocaleDateString('nl-NL',
             { day: '2-digit', month: 'short', year: '2-digit' })}
         </span>
+        <Button variant="ghost" disabled={busy} onClick={() => setOpen(o => !o)}>
+          {open ? 'Annuleer' : '+ Werk'}
+        </Button>
         <ConfirmButton confirmLabel="Versie verwijderen?" disabled={busy} onConfirm={verwijder}>
           Verwijder versie
         </ConfirmButton>
       </div>
 
-      {mv.werk.length > 0 && (
+      {(open || mv.werk.length > 0) && (
         <div className="mt-1 space-y-1.5 pl-2 border-l border-slate-700/60">
+          {open && (
+            <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5">
+              <TextInput placeholder="Consultant" value={cons}
+                onChange={e => setCons(e.target.value)} />
+              <TextInput placeholder="Omschrijving (optioneel)" value={note}
+                onChange={e => setNote(e.target.value)} />
+              <TextInput placeholder="Ticket (optioneel)" value={ticket}
+                onChange={e => setTicket(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Select className="flex-1" value={status} onChange={e => setStatus(e.target.value)}>
+                  {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </Select>
+                <Button variant="primary" disabled={busy || !cons.trim()} onClick={voegWerkToe}>
+                  {busy ? 'Opslaan…' : 'Voeg toe'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {mv.werk.map(w => (
             <WerkRegel key={w.id} workItem={w} onChanged={onChanged} onError={onError} />
           ))}
@@ -456,9 +508,8 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
       )}
 
       <p className="text-slate-600 text-xs mt-2">
-        {werkTotaal === 0
-          ? 'Werk leg je vast bij het registreren van een nieuwe versie.'
-          : 'Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.'}
+        Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.
+        {werkTotaal === 0 && ' Met "+ Werk" hang je het alsnog aan een versie die er al staat.'}
         {' '}Neem je een versie terug, dan valt de omgeving terug op de vorige.
       </p>
     </Section>
