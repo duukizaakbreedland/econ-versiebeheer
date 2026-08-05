@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
-  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions,
+  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, deleteModelVersion,
   fetchPromotiesVoorModel, rollbackDeployment,
 } from '../lib/api.js'
 import { Section, Banner, InlineEdit, ConfirmButton, Select } from './ui/index.jsx'
@@ -185,10 +185,12 @@ function WerkRegel({ workItem, onChanged, onError }) {
           onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
       </div>
 
+      {/* Verwijdert alleen deze aantekening — de versie zelf blijft staan.
+          Die neem je terug met "Verwijder versie" op de versieregel erboven. */}
       <div className="flex justify-end pt-0.5">
-        <ConfirmButton confirmLabel="Verwijderen?"
+        <ConfirmButton confirmLabel="Werk verwijderen?"
           onConfirm={() => run(() => deleteWorkItem(workItem.id))}>
-          Verwijder
+          Verwijder werk
         </ConfirmButton>
       </div>
     </div>
@@ -368,6 +370,49 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
   )
 }
 
+// ─── Eén versieregel, met de mogelijkheid hem terug te nemen ──────────────────
+function VersieRegel({ mv, onChanged, onError }) {
+  const [busy, setBusy] = useState(false)
+
+  async function verwijder() {
+    setBusy(true)
+    try { await deleteModelVersion(mv.id); await onChanged() }
+    catch (e) { onError(e.message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className={busy ? 'opacity-60' : ''}>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-mono text-slate-200">{mv.version}</span>
+        <div className="flex gap-1">
+          {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
+            <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
+              style={{ background: ENV_COLOR[e] + '20', color: ENV_COLOR[e] }}>
+              {e}
+            </span>
+          ))}
+        </div>
+        <span className="ml-auto text-slate-600">
+          {new Date(mv.created_at).toLocaleDateString('nl-NL',
+            { day: '2-digit', month: 'short', year: '2-digit' })}
+        </span>
+        <ConfirmButton confirmLabel="Versie verwijderen?" disabled={busy} onConfirm={verwijder}>
+          Verwijder versie
+        </ConfirmButton>
+      </div>
+
+      {mv.werk.length > 0 && (
+        <div className="mt-1 space-y-1.5 pl-2 border-l border-slate-700/60">
+          {mv.werk.map(w => (
+            <WerkRegel key={w.id} workItem={w} onChanged={onChanged} onError={onError} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Versies met het werk dat eraan hangt ─────────────────────────────────────
 function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
   const [rows, setRows] = useState(null)
@@ -393,31 +438,7 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
     <Section title={`Versies en werk (${rows.length})`} collapsible defaultOpen>
       <div className="space-y-2">
         {zichtbaar.map(mv => (
-          <div key={mv.id}>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-slate-200">{mv.version}</span>
-              <div className="flex gap-1">
-                {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
-                  <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
-                    style={{ background: ENV_COLOR[e] + '20', color: ENV_COLOR[e] }}>
-                    {e}
-                  </span>
-                ))}
-              </div>
-              <span className="ml-auto text-slate-600">
-                {new Date(mv.created_at).toLocaleDateString('nl-NL',
-                  { day: '2-digit', month: 'short', year: '2-digit' })}
-              </span>
-            </div>
-
-            {mv.werk.length > 0 && (
-              <div className="mt-1 space-y-1.5 pl-2 border-l border-slate-700/60">
-                {mv.werk.map(w => (
-                  <WerkRegel key={w.id} workItem={w} onChanged={onChanged} onError={onError} />
-                ))}
-              </div>
-            )}
-          </div>
+          <VersieRegel key={mv.id} mv={mv} onChanged={onChanged} onError={onError} />
         ))}
       </div>
 
@@ -438,6 +459,7 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
         {werkTotaal === 0
           ? 'Werk leg je vast bij het registreren van een nieuwe versie.'
           : 'Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.'}
+        {' '}Neem je een versie terug, dan valt de omgeving terug op de vorige.
       </p>
     </Section>
   )

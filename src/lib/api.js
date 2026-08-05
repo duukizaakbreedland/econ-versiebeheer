@@ -410,6 +410,30 @@ export async function removeVersionFromEnv({ modelVersionId, envName, orgSlug = 
   throwIf(error)
 }
 
+// Een verkeerd geregistreerde versie helemaal terugnemen.
+//
+// Registreren doet twee dingen: de versie actief zetten in een omgeving én er
+// werk aan hangen. Alleen het werk weghalen laat de versie dus gewoon staan —
+// daarvoor is deze functie er. De omgeving valt daarna terug op de versie die
+// er dáárvoor actief was, omdat get_current_versions de laatste activering pakt
+// die er nog staat.
+//
+// Activeringen, werk en koppelingen van deze versie gaan mee via cascade.
+export async function deleteModelVersion(modelVersionId) {
+  const { data: releases } = await supabase
+    .from('deployment_log_versions')
+    .select('id').eq('model_version_id', modelVersionId).limit(1)
+
+  // Een gepromoveerde versie hoort via Promoties → Terug ongedaan gemaakt te
+  // worden; dat zet de vervangen versie netjes terug en ruimt de release op.
+  if (releases?.length) {
+    throw new Error('Deze versie zit in een release. Draai die eerst terug bij Promoties.')
+  }
+
+  const { error } = await supabase.from('model_versions').delete().eq('id', modelVersionId)
+  throwIf(error)
+}
+
 // Werk item bijwerken
 export async function updateWorkItem({ id, consultant, description, ticket, status }) {
   const patch = { updated_at: new Date().toISOString() }
