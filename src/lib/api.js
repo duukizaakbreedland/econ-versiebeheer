@@ -255,10 +255,10 @@ async function revertWorkItemStatus(modelVersionIds, envName) {
 // versie in de tool, dan staat hij in eCon al zo aangeroepen; daarom wijzen we
 // de koppelingen meteen mee. Zonder dit blijft de graph de oude versie tonen
 // tot de volgende eCon-import, terwijl het detailpaneel al wel bijgewerkt is.
-async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, childVersionId }) {
+async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, childVersionId, ketenModelIds }) {
   const { data: rijen } = await supabase
     .from('dependencies')
-    .select('id, parent_version_id')
+    .select('id, parent_version_id, parent: parent_version_id ( model_id )')
     .eq('environment_id', envId)
     .eq('child_model_id', childModelId)
 
@@ -272,7 +272,15 @@ async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, 
     (actief ?? []).filter(v => v.env_name === envName).map(v => v.model_version_id)
   )
 
-  const teWijzigen = rijen.filter(r => actieveVersies.has(r.parent_version_id))
+  // Alleen binnen de keten waarin je staat. Ruim de helft van de modellen hangt
+  // in meerdere ketens, en daar hoort een submodel juist op verschillende
+  // versies te kunnen draaien — een nieuwe versie hier zegt niets over daar.
+  const inKeten = ketenModelIds?.length ? new Set(ketenModelIds) : null
+
+  const teWijzigen = rijen.filter(r =>
+    actieveVersies.has(r.parent_version_id) &&
+    (!inKeten || inKeten.has(r.parent?.model_id))
+  )
   if (teWijzigen.length === 0) return
 
   const { error } = await supabase
@@ -283,7 +291,7 @@ async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, 
 }
 
 // ─── Nieuwe versie registreren ────────────────────────────────────────────────
-export async function registerVersion({ modelName, envName, version, consultant, note, ticket, orgSlug = 'buva' }) {
+export async function registerVersion({ modelName, envName, version, consultant, note, ticket, ketenModelIds, orgSlug = 'buva' }) {
   const orgId = await getOrgId(orgSlug)
 
   const { data: env, error: envErr } = await supabase
@@ -305,7 +313,7 @@ export async function registerVersion({ modelName, envName, version, consultant,
   await activateVersion(env.id, mv.id)
 
   await herkoppelNaarNieuweVersie({
-    orgId, envId: env.id, envName, childModelId: model.id, childVersionId: mv.id,
+    orgId, envId: env.id, envName, childModelId: model.id, childVersionId: mv.id, ketenModelIds,
   })
 
   if (consultant) {

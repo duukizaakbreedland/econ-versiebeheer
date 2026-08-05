@@ -94,12 +94,9 @@ const STATUS_TEKST = {
   anders: { tekst: '≠ wijkt af',         kleur: '#a855f7' },
 }
 
-function EnvRow({ env, version, eigenVersie, status, mistExport }) {
+function EnvRow({ env, version, status, mistExport }) {
   const color = ENV_COLOR[env]
   const st    = STATUS_TEKST[status]
-  // De versie die het model op zichzelf heeft, kan afwijken van hoe deze keten
-  // hem aanroept — dat is normaal zodra een submodel op meerdere plekken hangt.
-  const eigenAfwijkend = eigenVersie && eigenVersie !== version
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 border-t border-slate-800 first:border-t-0"
@@ -114,12 +111,6 @@ function EnvRow({ env, version, eigenVersie, status, mistExport }) {
           </span>
         ) : (
           <span className="text-slate-700 text-xs italic">niet actief</span>
-        )}
-        {eigenAfwijkend && (
-          <span className="text-slate-600 text-xs ml-2"
-            title={`Deze keten roept ${version} aan, terwijl het model zelf op ${eigenVersie} staat in ${env}`}>
-            model zelf: <span className="font-mono">{eigenVersie}</span>
-          </span>
         )}
       </div>
 
@@ -611,7 +602,6 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
                 key={naam}
                 env={naam}
                 version={d.versions[naam]}
-                eigenVersie={d.eigenVersies?.[naam]}
                 status={naam === 'PROD' ? null : versieStatus(d.versions[naam], d.versions.PROD)}
                 mistExport={d.ontbreekt?.includes(naam)}
               />
@@ -640,6 +630,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
             modelName={d.label}
             modelId={d.modelId}
             versions={d.versions}
+            ketenModelIds={chain.nodes.map(n => n.modelId)}
             onRefresh={handleChanged}
           />
         )}

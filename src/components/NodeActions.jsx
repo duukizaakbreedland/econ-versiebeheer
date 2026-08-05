@@ -29,7 +29,7 @@ function ActieKaart({ titel, subtitel, icon, open, onToggle, children }) {
   )
 }
 
-export default function NodeActions({ modelName, modelId, versions, onRefresh }) {
+export default function NodeActions({ modelName, modelId, versions, ketenModelIds, onRefresh }) {
   const canToAcc  = versions.TST && versions.ACC  !== versions.TST
   const canToProd = versions.ACC && versions.PROD !== versions.ACC
   const canPromote = canToAcc || canToProd
@@ -56,7 +56,7 @@ export default function NodeActions({ modelName, modelId, versions, onRefresh })
     try {
       await registerVersion({
         modelName, envName: 'TST', version: versie.trim(), consultant: cons.trim(),
-        note: note.trim(), ticket: regTicket.trim(),
+        note: note.trim(), ticket: regTicket.trim(), ketenModelIds,
       })
       setMsg({ ok: true, text: `${versie.trim()} geregistreerd in TST` })
       setVersie(versieVanVandaag()); setCons(voornaam); setNote(''); setRegTicket(''); setOpenKaart(null)

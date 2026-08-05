@@ -38,7 +38,7 @@ export function applyLayout(rawNodes, rawEdges, chainKey, shared, extra = {}) {
       if (k?.ontbreekt?.[n.id]) ontbreekt.push(env)
     }
     return {
-      label: n.label, versions, eigenVersies: n.versions, versionIds: n.versionIds,
+      label: n.label, versions, versionIds: n.versionIds,
       workItem: n.workItem, modelId: n.modelId, ontbreekt,
       sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
     }
