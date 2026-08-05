@@ -116,8 +116,9 @@ function EnvRow({ env, version, eigenVersie, status, mistExport }) {
           <span className="text-slate-700 text-xs italic">niet actief</span>
         )}
         {eigenAfwijkend && (
-          <span className="text-slate-600 text-xs ml-2" title="De versie die dit model op zichzelf heeft">
-            eigen: <span className="font-mono">{eigenVersie}</span>
+          <span className="text-slate-600 text-xs ml-2"
+            title={`Deze keten roept ${version} aan, terwijl het model zelf op ${eigenVersie} staat in ${env}`}>
+            model zelf: <span className="font-mono">{eigenVersie}</span>
           </span>
         )}
       </div>

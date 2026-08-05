@@ -249,6 +249,39 @@ async function revertWorkItemStatus(modelVersionIds, envName) {
     .in('status', back.from)
 }
 
+// ─── Koppelingen meenemen bij een nieuwe versie ───────────────────────────────
+// De keten toont niet de eigen versie van een submodel, maar de versie waarmee
+// zijn ouder hem aanroept — die staat in `dependencies`. Registreer je een
+// versie in de tool, dan staat hij in eCon al zo aangeroepen; daarom wijzen we
+// de koppelingen meteen mee. Zonder dit blijft de graph de oude versie tonen
+// tot de volgende eCon-import, terwijl het detailpaneel al wel bijgewerkt is.
+async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, childVersionId }) {
+  const { data: rijen } = await supabase
+    .from('dependencies')
+    .select('id, parent_version_id')
+    .eq('environment_id', envId)
+    .eq('child_model_id', childModelId)
+
+  // Hoofdmodellen worden nergens aangeroepen; die gebruiken hun eigen versie al.
+  if (!rijen?.length) return
+
+  // Alleen koppelingen onder een ouderversie die nu draait. Rijen van oude
+  // ouderversies blijven als historie staan en tellen in de graph toch niet mee.
+  const { data: actief } = await supabase.rpc('get_current_versions', { p_org_id: orgId })
+  const actieveVersies = new Set(
+    (actief ?? []).filter(v => v.env_name === envName).map(v => v.model_version_id)
+  )
+
+  const teWijzigen = rijen.filter(r => actieveVersies.has(r.parent_version_id))
+  if (teWijzigen.length === 0) return
+
+  const { error } = await supabase
+    .from('dependencies')
+    .update({ child_version_id: childVersionId })
+    .in('id', teWijzigen.map(r => r.id))
+  throwIf(error)
+}
+
 // ─── Nieuwe versie registreren ────────────────────────────────────────────────
 export async function registerVersion({ modelName, envName, version, consultant, note, ticket, orgSlug = 'buva' }) {
   const orgId = await getOrgId(orgSlug)
@@ -270,6 +303,10 @@ export async function registerVersion({ modelName, envName, version, consultant,
   throwIf(mvErr)
 
   await activateVersion(env.id, mv.id)
+
+  await herkoppelNaarNieuweVersie({
+    orgId, envId: env.id, envName, childModelId: model.id, childVersionId: mv.id,
+  })
 
   if (consultant) {
     const { error } = await supabase
