@@ -106,7 +106,7 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Zeker weten
 }
 
 // ─── Klik-om-te-bewerken tekst ────────────────────────────────────────────────
-export function InlineEdit({ value, onSave, placeholder = '—', mono = false, className = '', textClass = '' }) {
+export function InlineEdit({ value, onSave, placeholder = '—', mono = false, multiline = false, rows = 3, className = '', textClass = '' }) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState(value ?? '')
   const [busy,    setBusy]    = useState(false)
@@ -124,6 +124,26 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, c
   }
 
   if (editing) {
+    // Meerregelig: Enter maakt een nieuwe regel, opslaan gaat met Ctrl+Enter of
+    // door weg te klikken. Eenregelig blijft Enter opslaan.
+    if (multiline) {
+      return (
+        <textarea
+          ref={ref}
+          rows={rows}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit() }
+            if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false) }
+          }}
+          className={`w-full bg-slate-900 border border-blue-500 rounded px-2 py-1.5 text-white text-xs
+                      leading-relaxed resize-y focus:outline-none ${className}`}
+        />
+      )
+    }
+
     return (
       <input
         ref={ref}
@@ -144,13 +164,16 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, c
     <button
       onClick={() => setEditing(true)}
       title="Klik om te bewerken"
-      className={`group inline-flex items-center gap-1 text-left rounded px-1 -mx-1
-                  hover:bg-slate-700/50 transition-colors ${busy ? 'opacity-50' : ''} ${className}`}
+      className={`group text-left rounded px-1 -mx-1 hover:bg-slate-700/50 transition-colors
+                  ${multiline ? 'flex w-full items-start gap-1' : 'inline-flex items-center gap-1'}
+                  ${busy ? 'opacity-50' : ''} ${className}`}
     >
-      <span className={`${mono ? 'font-mono' : ''} ${value ? textClass : 'text-slate-600 italic'}`}>
+      <span className={`${mono ? 'font-mono' : ''} ${multiline ? 'whitespace-pre-wrap break-words' : ''}
+                        ${value ? textClass : 'text-slate-600 italic'}`}>
         {value || placeholder}
       </span>
-      <svg className="w-2.5 h-2.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+      <svg className={`w-2.5 h-2.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0
+                       ${multiline ? 'mt-0.5 ml-auto' : ''}`}
         fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
         <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
       </svg>

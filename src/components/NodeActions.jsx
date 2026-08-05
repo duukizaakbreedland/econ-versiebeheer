@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { registerVersion, promoteModel } from '../lib/api.js'
+import { useVoornaam } from '../lib/auth.jsx'
 import { Section, Banner, Button, TextInput } from './ui/index.jsx'
 
 // Versienummers volgen bij Buva het patroon jj.mm.dd — vandaag is de logische start
@@ -33,13 +34,14 @@ export default function NodeActions({ modelName, modelId, versions, onRefresh })
   const canToProd = versions.ACC && versions.PROD !== versions.ACC
   const canPromote = canToAcc || canToProd
 
+  const voornaam = useVoornaam()
+
   const [openKaart, setOpenKaart] = useState(null) // null | 'register' | 'promote'
   const [target,    setTarget]    = useState(() => canToAcc ? 'ACC' : 'PROD')
   const [versie,    setVersie]    = useState(versieVanVandaag)
-  const [cons,      setCons]      = useState('')
+  const [cons,      setCons]      = useState(voornaam)
   const [note,      setNote]      = useState('')
   const [regTicket, setRegTicket] = useState('')
-  const [ticket,    setTicket]    = useState('')
   const [saving,    setSaving]    = useState(false)
   const [msg,       setMsg]       = useState(null)
 
@@ -57,7 +59,7 @@ export default function NodeActions({ modelName, modelId, versions, onRefresh })
         note: note.trim(), ticket: regTicket.trim(),
       })
       setMsg({ ok: true, text: `${versie.trim()} geregistreerd in TST` })
-      setVersie(versieVanVandaag()); setCons(''); setNote(''); setRegTicket(''); setOpenKaart(null)
+      setVersie(versieVanVandaag()); setCons(voornaam); setNote(''); setRegTicket(''); setOpenKaart(null)
       await onRefresh()
     } catch (e) {
       setMsg({ ok: false, text: e.message ?? 'Onbekende fout' })
@@ -69,9 +71,9 @@ export default function NodeActions({ modelName, modelId, versions, onRefresh })
     const fromVer = target === 'ACC' ? versions.TST : versions.ACC
     setSaving(true); setMsg(null)
     try {
-      await promoteModel({ modelId, fromEnv, toEnv: target, ticket: ticket.trim() })
+      await promoteModel({ modelId, fromEnv, toEnv: target })
       setMsg({ ok: true, text: `${fromVer} gepromoveerd naar ${target}` })
-      setTicket(''); setOpenKaart(null)
+      setOpenKaart(null)
       await onRefresh()
     } catch (e) {
       setMsg({ ok: false, text: e.message ?? 'Onbekende fout' })
@@ -135,8 +137,8 @@ export default function NodeActions({ modelName, modelId, versions, onRefresh })
             </div>
             <div className="text-slate-500 text-xs">
               <span className="font-mono text-slate-300">{fromVer}</span> gaat naar {target}
+              <span className="text-slate-600"> — het ticket komt mee uit het werk bij deze versie</span>
             </div>
-            <TextInput placeholder="Ticket (optioneel)" value={ticket} onChange={e => setTicket(e.target.value)} />
             <div className="flex gap-2 pt-0.5">
               <Button variant="green" className="flex-1" onClick={handlePromote} disabled={saving}>
                 {saving ? 'Bezig…' : `Naar ${target}`}

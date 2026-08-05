@@ -16,6 +16,8 @@ toegepast op de live database; ze staan hier zodat het schema reproduceerbaar is
 | `migrations/005_dependencies_per_env.sql` | Koppelingen per omgeving: `environment_id` + `child_model_id` op `dependencies` |
 | `migrations/006_backfill_dependencies.sql` | Eenmalige vulling van de koppelingen uit de bestaande ketenstructuur |
 | `migrations/007_rls.sql` | Row Level Security op alle tabellen: ingelogde gebruikers mogen alles, bezoekers niets |
+| `migrations/008_dependency_missing_flag.sql` | `dependencies.child_missing_in_export`: aangeroepen versie ontbrak in de export |
+| `migrations/009_model_opmerking.sql` | `models.notes`: algemene opmerking bij een model, los van een versie |
 | `seed.sql` | Buva-data uit het oorspronkelijke Excel-overzicht |
 
 ## Koppelingen

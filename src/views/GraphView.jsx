@@ -141,9 +141,13 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
 
       </div>
 
-      {/* Detail paneel — volledige hoogte */}
+      {/* Detail paneel — volledige hoogte.
+          De key dwingt een remount bij het wisselen van node: zonder dat blijven
+          meldingen, half ingevulde formulieren en de gekozen promotierichting van
+          het vorige model gewoon staan. */}
       {selectedNode && (
         <DetailPanel
+          key={selectedNode.id}
           node={selectedNode}
           chain={chain}
           chainKey={chainKey}

@@ -73,6 +73,20 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
+// Consultants loggen in met hun werkmail — daar zit de voornaam al in, dus die
+// hoeven ze niet elke keer opnieuw in te tikken.
+//   duuk.breedland@enshore.nl → Duuk
+export function voornaamUitEmail(email) {
+  const eerste = (email ?? '').split('@')[0].split(/[._-]/)[0]
+  if (!eerste) return ''
+  return eerste.charAt(0).toUpperCase() + eerste.slice(1).toLowerCase()
+}
+
+export function useVoornaam() {
+  const { session } = useAuth()
+  return voornaamUitEmail(session?.user?.email)
+}
+
 export async function signOut() {
   await supabase.auth.signOut()
 }

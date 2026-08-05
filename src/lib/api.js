@@ -43,7 +43,7 @@ export async function fetchChains(orgSlug = 'buva') {
     .from('chains')
     .select(`
       key, label,
-      chain_nodes ( node_key, models ( id, name, type ) ),
+      chain_nodes ( node_key, models ( id, name, type, notes ) ),
       chain_edges ( source_key, target_key )
     `)
     .eq('organization_id', orgId)
@@ -92,6 +92,7 @@ export async function fetchChains(orgSlug = 'buva') {
           type:     m.type.toLowerCase(),
           label:    m.name,
           modelId:  m.id,
+          notes:    m.notes,
           versions: {
             PROD: versionMap[`${m.id}:PROD`],
             ACC:  versionMap[`${m.id}:ACC`],
@@ -279,7 +280,7 @@ export async function registerVersion({ modelName, envName, version, consultant,
 }
 
 // ─── Enkel model promoveren ───────────────────────────────────────────────────
-export async function promoteModel({ modelId, fromEnv, toEnv, ticket, orgSlug = 'buva' }) {
+export async function promoteModel({ modelId, fromEnv, toEnv, orgSlug = 'buva' }) {
   const orgId = await getOrgId(orgSlug)
 
   const { data: toEnvRow } = await supabase
@@ -294,9 +295,18 @@ export async function promoteModel({ modelId, fromEnv, toEnv, ticket, orgSlug = 
 
   if (!fromVer) throw new Error(`Geen versie gevonden in ${fromEnv}`)
 
+  // Het ticket is al vastgelegd bij het werk dat aan deze versie hangt — daar
+  // halen we het op, in plaats van het bij elke promotie opnieuw te vragen.
+  const { data: wi } = await supabase
+    .from('work_items').select('ticket')
+    .eq('model_version_id', fromVer.model_version_id)
+    .not('ticket', 'is', null)
+    .limit(1)
+  const ticket = wi?.[0]?.ticket ?? null
+
   const { data: log, error: logErr } = await supabase
     .from('deployment_logs')
-    .insert({ environment_id: toEnvRow.id, ticket: ticket || null })
+    .insert({ environment_id: toEnvRow.id, ticket })
     .select('id').single()
   throwIf(logErr)
 
@@ -369,10 +379,13 @@ export async function promoteChain({ chainKey, fromEnv, toEnv, ticket, orgSlug =
 // Corrigeren
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Modelnaam wijzigen
-export async function updateModel({ modelId, name }) {
+// Modelnaam of algemene opmerking wijzigen
+export async function updateModel({ modelId, name, notes }) {
+  const patch = {}
+  if (name  !== undefined) patch.name  = name
+  if (notes !== undefined) patch.notes = notes || null
   const { error } = await supabase
-    .from('models').update({ name }).eq('id', modelId)
+    .from('models').update(patch).eq('id', modelId)
   throwIf(error)
 }
 
@@ -462,13 +475,6 @@ export async function fetchDependencies(orgSlug = 'buva') {
     childVersionId: d.child?.id,
     ontbreekt:     d.child_missing_in_export,
   }))
-}
-
-// Een andere submodelversie onder een parentversie hangen
-export async function updateDependencyChild({ id, childVersionId }) {
-  const { error } = await supabase
-    .from('dependencies').update({ child_version_id: childVersionId }).eq('id', id)
-  throwIf(error)
 }
 
 // Momentopname meenemen bij een promotie: de koppelingen zoals ze in de

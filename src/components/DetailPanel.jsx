@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
-  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions, updateDependencyChild,
+  updateModel, updateWorkItem, deleteWorkItem, fetchModelVersions,
   fetchPromotiesVoorModel, rollbackDeployment,
 } from '../lib/api.js'
 import { Section, Banner, InlineEdit, ConfirmButton, Select } from './ui/index.jsx'
@@ -10,6 +10,12 @@ import NodeActions from './NodeActions.jsx'
 const ENV_ORDER = ['PROD', 'ACC', 'TST']
 const ENV_COLOR = { PROD: '#22c55e', ACC: '#60a5fa', TST: '#fbbf24' }
 const STATUS_LABEL = { IN_PROGRESS: 'In uitvoering', REVIEW: 'In review', DONE: 'Afgerond' }
+// De werk-kaart is verder neutraal; het bolletje draagt de status.
+const STATUS_KLEUR = {
+  IN_PROGRESS: { kleur: '#fbbf24' },
+  REVIEW:      { kleur: '#60a5fa' },
+  DONE:        { kleur: '#475569' },
+}
 
 const MIN_W = 360
 const MAX_W = 680
@@ -54,10 +60,10 @@ function useResizableWidth() {
   return { width, onMouseDown }
 }
 
-// ─── Omgevingsrij ─────────────────────────────────────────────────────────────
-// ─── Doorstroom TST → ACC → PROD ──────────────────────────────────────────────
-// Laat in één oogopslag zien hoe ver de nieuwste versie is doorgezet.
-function Doorstroom({ versions }) {
+// ─── Samenvatting onder de omgevingslijst ─────────────────────────────────────
+// Eén regel die zegt hoe ver de nieuwste versie is doorgezet. De lijst erboven
+// toont de versies zelf al — dit vat alleen samen wat er nog open staat.
+function KetenSamenvatting({ versions }) {
   const stappen = ['TST', 'ACC', 'PROD']
   const nieuwste = [...stappen]
     .map(e => versions[e])
@@ -71,38 +77,15 @@ function Doorstroom({ versions }) {
   const achterstand = stappen.filter(e => !heeft(e))
 
   return (
-    <div className="mb-2">
-      <div className="flex items-center gap-1">
-        {stappen.map((env, i) => (
-          <div key={env} className="flex items-center gap-1 min-w-0">
-            {i > 0 && (
-              <svg className={`w-3 h-3 shrink-0 ${heeft(stappen[i - 1]) && !heeft(env) ? 'text-slate-400' : 'text-slate-700'}`}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-            )}
-            <div className="rounded px-1.5 py-1 text-center min-w-0"
-              style={heeft(env)
-                ? { background: ENV_COLOR[env] + '22', boxShadow: `inset 0 0 0 1px ${ENV_COLOR[env]}66` }
-                : { background: '#0f172a', boxShadow: 'inset 0 0 0 1px #334155' }}>
-              <div className="text-xs font-bold leading-none"
-                style={{ color: heeft(env) ? ENV_COLOR[env] : '#64748b' }}>{env}</div>
-              <div className="font-mono text-xs mt-0.5 leading-none"
-                style={{ color: heeft(env) ? '#e2e8f0' : '#64748b' }}>
-                {versions[env] ?? '—'}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="text-slate-500 text-xs mt-1.5">
-        {achterstand.length === 0
-          ? <>Overal <span className="font-mono text-slate-300">{nieuwste}</span></>
-          : <><span className="font-mono text-slate-300">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
-      </div>
+    <div className="text-slate-500 text-xs mt-2">
+      {achterstand.length === 0
+        ? <>Overal <span className="font-mono text-slate-300">{nieuwste}</span></>
+        : <><span className="font-mono text-slate-300">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
     </div>
   )
 }
+
+// ─── Omgevingsrij ─────────────────────────────────────────────────────────────
 
 const STATUS_TEKST = {
   voor:   { tekst: '↑ nieuwer dan PROD', kleur: '#fbbf24' },
@@ -160,66 +143,63 @@ function WerkRegel({ workItem, onChanged, onError }) {
     finally { setBusy(false) }
   }
 
-  const klaar = workItem.status === 'DONE'
-  const kleur = klaar
-    ? { rand: 'border-slate-700/60 bg-slate-900/40', naam: 'text-slate-300', tekst: 'text-slate-500', label: 'text-slate-600' }
-    : { rand: 'border-amber-800/40 bg-amber-950/30', naam: 'text-amber-300', tekst: 'text-amber-500/90', label: 'text-amber-700' }
+  const status = STATUS_KLEUR[workItem.status] ?? STATUS_KLEUR.IN_PROGRESS
+  const loopt  = workItem.status === 'IN_PROGRESS'
 
   return (
-    <div className={`border rounded-lg p-2.5 space-y-1.5 ${kleur.rand} ${busy ? 'opacity-60' : ''}`}>
-        <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-            klaar ? 'bg-slate-600' : 'bg-amber-400 animate-pulse'}`} />
-          <InlineEdit value={workItem.consultant} textClass={`${kleur.naam} text-xs font-semibold`}
-            onSave={v => run(() => updateWorkItem({ id: workItem.id, consultant: v }))} />
-          {workItem.createdAt && (
-            <span className={`text-xs ${kleur.label}`}
-              title={new Date(workItem.createdAt).toLocaleString('nl-NL')}>
-              {new Date(workItem.createdAt).toLocaleDateString('nl-NL',
-                { day: '2-digit', month: 'short', year: '2-digit' })}
-            </span>
-          )}
-          <div className="ml-auto">
-            <Select value={workItem.status}
-              onChange={e => run(() => updateWorkItem({ id: workItem.id, status: e.target.value }))}>
-              {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </Select>
-          </div>
+    <div className={`bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5
+                     ${busy ? 'opacity-60' : ''}`}>
+      {/* Wie, wanneer, en hoe ver */}
+      <div className="flex items-center gap-2">
+        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${loopt ? 'animate-pulse' : ''}`}
+          style={{ background: status.kleur }} title={STATUS_LABEL[workItem.status]} />
+        <InlineEdit value={workItem.consultant} textClass="text-slate-200 text-xs font-semibold"
+          onSave={v => run(() => updateWorkItem({ id: workItem.id, consultant: v }))} />
+        {workItem.createdAt && (
+          <span className="text-xs text-slate-600"
+            title={new Date(workItem.createdAt).toLocaleString('nl-NL')}>
+            {new Date(workItem.createdAt).toLocaleDateString('nl-NL',
+              { day: '2-digit', month: 'short', year: '2-digit' })}
+          </span>
+        )}
+        <div className="ml-auto">
+          <Select value={workItem.status}
+            onChange={e => run(() => updateWorkItem({ id: workItem.id, status: e.target.value }))}>
+            {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Select>
         </div>
+      </div>
 
-        <div className="text-xs">
-          <InlineEdit value={workItem.note} placeholder="Geen omschrijving" textClass={kleur.tekst}
+      {/* Gelabelde regels met een vaste labelbreedte, zodat ze uitlijnen */}
+      <div className="flex items-start gap-2 text-xs">
+        <span className="text-slate-600 w-20 shrink-0 pt-0.5">Omschrijving</span>
+        <div className="min-w-0 flex-1">
+          <InlineEdit value={workItem.note} placeholder="geen" textClass="text-slate-400"
             onSave={v => run(() => updateWorkItem({ id: workItem.id, description: v }))} />
         </div>
+      </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <span className={kleur.label}>Ticket</span>
-          <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass={kleur.naam}
-            onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
-          <div className="ml-auto">
-            <ConfirmButton confirmLabel="Verwijderen?"
-              onConfirm={() => run(() => deleteWorkItem(workItem.id))}>
-              Verwijder
-            </ConfirmButton>
-          </div>
-        </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-600 w-20 shrink-0">Ticket</span>
+        <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass="text-slate-300"
+          onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
+      </div>
+
+      <div className="flex justify-end pt-0.5">
+        <ConfirmButton confirmLabel="Verwijderen?"
+          onConfirm={() => run(() => deleteWorkItem(workItem.id))}>
+          Verwijder
+        </ConfirmButton>
+      </div>
     </div>
   )
 }
 
-// ─── Eén koppeling naar een submodel, met keuze van de versie ─────────────────
-function KoppelingRij({ dep, env, onChanged, onError }) {
-  const [versies, setVersies] = useState(null)
-  const [busy,    setBusy]    = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    fetchModelVersions(dep.childModelId)
-      .then(r => { if (!cancelled) setVersies(r) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [dep.childModelId])
-
+// ─── Eén koppeling naar een submodel ──────────────────────────────────────────
+// Puur ter informatie: welke versie hier hangt volgt uit het model zelf en komt
+// via de eCon-export binnen. Hier iets anders kiezen zou de werkelijkheid niet
+// veranderen, alleen het overzicht laten liegen.
+function KoppelingRij({ dep }) {
   return (
     <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs">
@@ -229,28 +209,14 @@ function KoppelingRij({ dep, env, onChanged, onError }) {
       </div>
       <div className="flex items-center gap-2">
         <span className="text-slate-300 text-xs flex-1 min-w-0 truncate">{dep.childName}</span>
-        {versies ? (
-          <Select
-            value={dep.childVersionId ?? ''}
-            disabled={busy}
-            onChange={async e => {
-              setBusy(true)
-              try { await updateDependencyChild({ id: dep.id, childVersionId: e.target.value }); await onChanged() }
-              catch (err) { onError(err.message) }
-              finally { setBusy(false) }
-            }}>
-            {versies.map(v => <option key={v.id} value={v.id}>{v.version}</option>)}
-          </Select>
-        ) : (
-          <span className="font-mono text-slate-500 text-xs">{dep.childVersion}</span>
-        )}
+        <span className="font-mono text-slate-400 text-xs shrink-0">{dep.childVersion}</span>
       </div>
     </div>
   )
 }
 
 // ─── Koppelingen-sectie ───────────────────────────────────────────────────────
-function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
+function KoppelingenSectie({ node, chain, chains, deps }) {
   const [env, setEnv] = useState('PROD')
 
   const d        = node.data
@@ -311,7 +277,7 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
             <div className="text-slate-600 text-xs mb-1">Spreekt aan</div>
             <div className="space-y-1.5">
               {kinderen.map(k => (
-                <KoppelingRij key={k.id} dep={k} env={env} onChanged={onChanged} onError={onError} />
+                <KoppelingRij key={k.id} dep={k} />
               ))}
             </div>
           </div>
@@ -547,9 +513,24 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {err && <Banner ok={false} onClose={() => setErr(null)}>{err}</Banner>}
 
+        {/* Algemene opmerking — gaat over het model zelf, niet over een versie */}
+        <Section title="Opmerking">
+          <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 text-xs">
+            <InlineEdit
+              value={d.notes}
+              multiline
+              placeholder="Opmerking toevoegen…"
+              textClass="text-slate-300 leading-relaxed"
+              onSave={async next => {
+                try { await updateModel({ modelId: d.modelId, notes: next }); await handleChanged() }
+                catch (e) { setErr(e.message) }
+              }}
+            />
+          </div>
+        </Section>
+
         {/* Versies zoals ze in deze keten worden aangeroepen */}
         <Section title="Versies in deze keten">
-          <Doorstroom versions={d.versions} />
           <div className="bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
             {ENV_ORDER.map(naam => (
               <EnvRow
@@ -562,6 +543,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
               />
             ))}
           </div>
+          <KetenSamenvatting versions={d.versions} />
           {d.ontbreekt?.length > 0 && (
             <div className="mt-2 text-xs text-red-400/90 bg-red-950/30 border border-red-900/50 rounded-lg px-2.5 py-2">
               ⚠ Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export
@@ -570,7 +552,15 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
           )}
         </Section>
 
-        {/* Wat je met dit model kunt doen — direct onder de stand */}
+        {/* Versies met het werk dat eraan hangt — wat er is gedaan, vóór wat je kunt doen */}
+        {isModel && (
+          <VersiesSectie
+            modelId={d.modelId} refreshKey={refreshKey}
+            onChanged={handleChanged} onError={setErr}
+          />
+        )}
+
+        {/* Wat je met dit model kunt doen */}
         {isModel && (
           <NodeActions
             modelName={d.label}
@@ -589,18 +579,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         )}
 
         {/* Koppelingen — per omgeving te bekijken */}
-        <KoppelingenSectie
-          node={node} chain={chain} chains={chains} deps={deps}
-          onChanged={handleChanged} onError={setErr}
-        />
-
-        {/* Versies met het werk dat eraan hangt */}
-        {isModel && (
-          <VersiesSectie
-            modelId={d.modelId} refreshKey={refreshKey}
-            onChanged={handleChanged} onError={setErr}
-          />
-        )}
+        <KoppelingenSectie node={node} chain={chain} chains={chains} deps={deps} />
       </div>
     </aside>
   )
