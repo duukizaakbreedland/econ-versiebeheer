@@ -1,0 +1,24 @@
+name: Supabase wakker houden
+
+# Het gratis Supabase-plan pauzeert een project na een week zonder activiteit.
+# Eén lichte query per dag via de REST-API is genoeg om dat te voorkomen.
+on:
+  schedule:
+    - cron: '0 6 * * *'   # dagelijks om 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query tegen de database
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/organizations?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "HTTP $code"
+          [ "$code" = "200" ]
