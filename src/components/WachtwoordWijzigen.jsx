@@ -43,15 +43,15 @@ export default function WachtwoordWijzigen({ email, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center px-6"
+    <div className="fixed inset-0 z-50 bg-overlay flex items-center justify-center px-6"
       onClick={onClose}>
-      <div className="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-xl p-5"
+      <div className="w-full max-w-sm bg-card border border-line rounded-xl p-5"
         onClick={e => e.stopPropagation()}>
 
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-slate-200 text-sm font-semibold">Wachtwoord wijzigen</h2>
+          <h2 className="text-ink text-sm font-semibold">Wachtwoord wijzigen</h2>
           <button onClick={onClose}
-            className="ml-auto text-slate-600 hover:text-slate-300 text-xl leading-none transition-colors">×</button>
+            className="ml-auto text-ink-3 hover:text-ink text-xl leading-none transition-colors">×</button>
         </div>
 
         {klaar ? (
@@ -62,19 +62,19 @@ export default function WachtwoordWijzigen({ email, onClose }) {
         ) : (
           <form onSubmit={handleOpslaan} className="space-y-3">
             <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Huidig wachtwoord</label>
+              <label className="text-ink-2 text-xs block mb-1.5">Huidig wachtwoord</label>
               <TextInput type="password" autoFocus required autoComplete="current-password"
                 value={huidig} onChange={e => setHuidig(e.target.value)} />
             </div>
 
             <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Nieuw wachtwoord</label>
+              <label className="text-ink-2 text-xs block mb-1.5">Nieuw wachtwoord</label>
               <TextInput type="password" required autoComplete="new-password"
                 value={nieuw} onChange={e => setNieuw(e.target.value)} />
             </div>
 
             <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Nogmaals ter controle</label>
+              <label className="text-ink-2 text-xs block mb-1.5">Nogmaals ter controle</label>
               <TextInput type="password" required autoComplete="new-password"
                 value={herhaal} onChange={e => setHerhaal(e.target.value)} />
             </div>
@@ -83,13 +83,13 @@ export default function WachtwoordWijzigen({ email, onClose }) {
               {EISEN.map(e => {
                 const ok = e.test(nieuw)
                 return (
-                  <li key={e.tekst} className={`text-xs flex items-center gap-1.5 ${ok ? 'text-green-500' : 'text-slate-600'}`}>
+                  <li key={e.tekst} className={`text-xs flex items-center gap-1.5 ${ok ? 'text-add' : 'text-ink-3'}`}>
                     <span>{ok ? '✓' : '·'}</span> {e.tekst}
                   </li>
                 )
               })}
               <li className={`text-xs flex items-center gap-1.5 ${
-                herhaal && nieuw === herhaal ? 'text-green-500' : 'text-slate-600'}`}>
+                herhaal && nieuw === herhaal ? 'text-add' : 'text-ink-3'}`}>
                 <span>{herhaal && nieuw === herhaal ? '✓' : '·'}</span> beide velden gelijk
               </li>
             </ul>

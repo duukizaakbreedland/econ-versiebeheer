@@ -7,15 +7,15 @@ import {
 import { useVoornaam } from '../lib/auth.jsx'
 import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput } from './ui/index.jsx'
 import NodeActions from './NodeActions.jsx'
+import { ENV, GEEL, BLAUW, ORANJE, VIOLET, GRIJS, tint } from '../lib/kleuren.js'
 
 const ENV_ORDER = ['PROD', 'ACC', 'TST']
-const ENV_COLOR = { PROD: '#22c55e', ACC: '#60a5fa', TST: '#fbbf24' }
 const STATUS_LABEL = { IN_PROGRESS: 'In uitvoering', REVIEW: 'In review', DONE: 'Afgerond' }
 // De werk-kaart is verder neutraal; het bolletje draagt de status.
 const STATUS_KLEUR = {
-  IN_PROGRESS: { kleur: '#fbbf24' },
-  REVIEW:      { kleur: '#60a5fa' },
-  DONE:        { kleur: '#475569' },
+  IN_PROGRESS: { kleur: GEEL.ink },
+  REVIEW:      { kleur: BLAUW.ink },
+  DONE:        { kleur: GRIJS.ink },
 }
 
 const MIN_W = 360
@@ -78,10 +78,10 @@ function KetenSamenvatting({ versions }) {
   const achterstand = stappen.filter(e => !heeft(e))
 
   return (
-    <div className="text-slate-500 text-xs mt-2">
+    <div className="text-meta text-xs mt-2">
       {achterstand.length === 0
-        ? <>Overal <span className="font-mono text-slate-300">{nieuwste}</span></>
-        : <><span className="font-mono text-slate-300">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
+        ? <>Overal <span className="font-mono text-ink">{nieuwste}</span></>
+        : <><span className="font-mono text-ink">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
     </div>
   )
 }
@@ -89,35 +89,35 @@ function KetenSamenvatting({ versions }) {
 // ─── Omgevingsrij ─────────────────────────────────────────────────────────────
 
 const STATUS_TEKST = {
-  voor:   { tekst: '↑ nieuwer dan PROD', kleur: '#fbbf24' },
-  achter: { tekst: '↓ ouder dan PROD',   kleur: '#f97316' },
-  anders: { tekst: '≠ wijkt af',         kleur: '#a855f7' },
+  voor:   { tekst: '↑ nieuwer dan PROD', familie: GEEL },
+  achter: { tekst: '↓ ouder dan PROD',   familie: ORANJE },
+  anders: { tekst: '≠ wijkt af',         familie: VIOLET },
 }
 
 function EnvRow({ env, version, status, mistExport }) {
-  const color = ENV_COLOR[env]
+  const color = ENV[env].ink
   const st    = STATUS_TEKST[status]
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 border-t border-slate-800 first:border-t-0"
-      style={{ background: st ? st.kleur + '12' : 'transparent' }}>
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-line first:border-t-0"
+      style={{ background: st ? st.familie.bg : 'transparent' }}>
       <span className="text-xs font-bold w-11 shrink-0" style={{ color }}>{env}</span>
 
       <div className="min-w-0">
         {version ? (
-          <span className="font-mono text-xs" style={{ color: st ? st.kleur : '#cbd5e1',
+          <span className="font-mono text-xs" style={{ color: st ? st.familie.ink : 'var(--ink)',
             fontWeight: st ? 700 : 400 }}>
             {version}
           </span>
         ) : (
-          <span className="text-slate-700 text-xs italic">niet actief</span>
+          <span className="text-ink-4 text-xs italic">niet actief</span>
         )}
       </div>
 
       {mistExport && (
-        <span className="text-red-400 text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>
+        <span className="text-del text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>
       )}
-      {st && <span className="text-xs shrink-0 ml-auto" style={{ color: st.kleur }}>{st.tekst}</span>}
+      {st && <span className="text-xs shrink-0 ml-auto" style={{ color: st.familie.ink }}>{st.tekst}</span>}
     </div>
   )
 }
@@ -140,16 +140,16 @@ function WerkRegel({ workItem, onChanged, onError }) {
   const loopt  = workItem.status === 'IN_PROGRESS'
 
   return (
-    <div className={`bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5
+    <div className={`bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5
                      ${busy ? 'opacity-60' : ''}`}>
       {/* Wie, wanneer, en hoe ver */}
       <div className="flex items-center gap-2">
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${loopt ? 'animate-pulse' : ''}`}
           style={{ background: status.kleur }} title={STATUS_LABEL[workItem.status]} />
-        <InlineEdit value={workItem.consultant} textClass="text-slate-200 text-xs font-semibold"
+        <InlineEdit value={workItem.consultant} textClass="text-ink text-xs font-semibold"
           onSave={v => run(() => updateWorkItem({ id: workItem.id, consultant: v }))} />
         {workItem.createdAt && (
-          <span className="text-xs text-slate-600"
+          <span className="text-xs text-ink-3"
             title={new Date(workItem.createdAt).toLocaleString('nl-NL')}>
             {new Date(workItem.createdAt).toLocaleDateString('nl-NL',
               { day: '2-digit', month: 'short', year: '2-digit' })}
@@ -165,16 +165,16 @@ function WerkRegel({ workItem, onChanged, onError }) {
 
       {/* Gelabelde regels met een vaste labelbreedte, zodat ze uitlijnen */}
       <div className="flex items-start gap-2 text-xs">
-        <span className="text-slate-600 w-20 shrink-0 pt-0.5">Omschrijving</span>
+        <span className="text-ink-3 w-20 shrink-0 pt-0.5">Omschrijving</span>
         <div className="min-w-0 flex-1">
-          <InlineEdit value={workItem.note} placeholder="geen" textClass="text-slate-400"
+          <InlineEdit value={workItem.note} placeholder="geen" textClass="text-ink-2"
             onSave={v => run(() => updateWorkItem({ id: workItem.id, description: v }))} />
         </div>
       </div>
 
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-slate-600 w-20 shrink-0">Ticket</span>
-        <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass="text-slate-300"
+        <span className="text-ink-3 w-20 shrink-0">Ticket</span>
+        <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass="text-ink"
           onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
       </div>
 
@@ -196,15 +196,15 @@ function WerkRegel({ workItem, onChanged, onError }) {
 // veranderen, alleen het overzicht laten liegen.
 function KoppelingRij({ dep }) {
   return (
-    <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5">
+    <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs">
-        <span className="text-slate-600">via</span>
-        <span className="text-blue-400">{dep.ifaceName}</span>
-        <span className="font-mono text-slate-600">{dep.ifaceVersion}</span>
+        <span className="text-ink-3">via</span>
+        <span className="text-mov">{dep.ifaceName}</span>
+        <span className="font-mono text-ink-3">{dep.ifaceVersion}</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-slate-300 text-xs flex-1 min-w-0 truncate">{dep.childName}</span>
-        <span className="font-mono text-slate-400 text-xs shrink-0">{dep.childVersion}</span>
+        <span className="text-ink text-xs flex-1 min-w-0 truncate">{dep.childName}</span>
+        <span className="font-mono text-ink-2 text-xs shrink-0">{dep.childVersion}</span>
       </div>
     </div>
   )
@@ -243,8 +243,8 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
             <button key={e} onClick={() => setEnv(e)}
               className="px-1.5 py-0.5 text-xs font-bold rounded transition-colors"
               style={env === e
-                ? { background: ENV_COLOR[e] + '25', color: ENV_COLOR[e] }
-                : { color: '#475569' }}>
+                ? { background: ENV[e].bg, color: ENV[e].ink }
+                : { color: 'var(--ink-3)' }}>
               {e}
             </button>
           ))}
@@ -253,14 +253,14 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
       <div className="space-y-3">
         {ouders.length > 0 && (
           <div>
-            <div className="text-slate-600 text-xs mb-1">Wordt aangesproken door</div>
+            <div className="text-ink-3 text-xs mb-1">Wordt aangesproken door</div>
             {ouders.map(o => (
               <div key={o.id} className="flex items-center gap-2 text-xs py-0.5">
-                <span className="text-slate-600">↑</span>
-                <span className="text-slate-400 truncate">{o.parentName}</span>
-                <span className="font-mono text-slate-600">{o.parentVersion}</span>
-                <span className="ml-auto text-slate-500">
-                  als <span className="font-mono text-slate-300">{o.childVersion}</span>
+                <span className="text-ink-3">↑</span>
+                <span className="text-ink-2 truncate">{o.parentName}</span>
+                <span className="font-mono text-ink-3">{o.parentVersion}</span>
+                <span className="ml-auto text-meta">
+                  als <span className="font-mono text-ink">{o.childVersion}</span>
                 </span>
               </div>
             ))}
@@ -269,7 +269,7 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
 
         {kinderen.length > 0 && (
           <div>
-            <div className="text-slate-600 text-xs mb-1">Spreekt aan</div>
+            <div className="text-ink-3 text-xs mb-1">Spreekt aan</div>
             <div className="space-y-1.5">
               {kinderen.map(k => (
                 <KoppelingRij key={k.id} dep={k} />
@@ -280,28 +280,28 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
 
         {!heeftKoppelingen && (
           <div>
-            <div className="text-slate-600 text-xs mb-1">
+            <div className="text-ink-3 text-xs mb-1">
               Nog niets vastgelegd voor {env} — vaste ketenstructuur
             </div>
             {structParents.map(p => (
-              <div key={p.id} className="flex items-center gap-2 text-xs text-slate-400 py-0.5">
-                <span className="text-slate-600">↑</span> {p.label}
+              <div key={p.id} className="flex items-center gap-2 text-xs text-ink-2 py-0.5">
+                <span className="text-ink-3">↑</span> {p.label}
               </div>
             ))}
             {structChildren.map(c => (
-              <div key={c.id} className="flex items-center gap-2 text-xs text-slate-400 py-0.5">
-                <span className="text-slate-600">↓</span> {c.label}
+              <div key={c.id} className="flex items-center gap-2 text-xs text-ink-2 py-0.5">
+                <span className="text-ink-3">↓</span> {c.label}
               </div>
             ))}
           </div>
         )}
 
         {isShared && (
-          <div className="bg-purple-950/30 border border-purple-800/40 rounded-lg p-2.5">
-            <div className="text-purple-400 text-xs font-semibold mb-1">Ook gebruikt in</div>
+          <div className="bg-cond-bg border border-cond-bg-2 rounded-lg p-2.5">
+            <div className="text-cond text-xs font-semibold mb-1">Ook gebruikt in</div>
             {d.sharedIn.map(k => (
-              <div key={k} className="flex items-center gap-2 text-xs text-purple-300/80 py-0.5">
-                <span className="text-purple-700">•</span> {chains[k]?.label || k}
+              <div key={k} className="flex items-center gap-2 text-xs text-cond py-0.5">
+                <span className="text-cond">•</span> {chains[k]?.label || k}
               </div>
             ))}
           </div>
@@ -338,12 +338,12 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
       <div className="space-y-1">
         {rijen.slice(0, 5).map(p => (
           <div key={p.logId}
-            className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-1.5">
+            className="flex items-center gap-2 bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5">
             <span className="text-xs font-bold shrink-0" style={{ color: ENV_COLOR[p.env] }}>{p.env}</span>
-            {p.van && <span className="font-mono text-slate-600 text-xs line-through">{p.van}</span>}
-            <span className="text-slate-600 text-xs">→</span>
-            <span className="font-mono text-slate-200 text-xs">{p.naar}</span>
-            <span className="text-slate-600 text-xs ml-auto shrink-0"
+            {p.van && <span className="font-mono text-ink-3 text-xs line-through">{p.van}</span>}
+            <span className="text-ink-3 text-xs">→</span>
+            <span className="font-mono text-ink text-xs">{p.naar}</span>
+            <span className="text-ink-3 text-xs ml-auto shrink-0"
               title={new Date(p.wanneer).toLocaleString('nl-NL')}>
               {new Date(p.wanneer).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' })}
             </span>
@@ -356,7 +356,7 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
           </div>
         ))}
       </div>
-      <p className="text-slate-600 text-xs mt-1.5">
+      <p className="text-ink-3 text-xs mt-1.5">
         Alleen de laatste promotie per omgeving is terug te draaien.
       </p>
     </Section>
@@ -406,7 +406,7 @@ function VersieRegel({ mv, onChanged, onError }) {
   return (
     <div className={busy ? 'opacity-60' : ''}>
       <div className="flex items-center gap-2 text-xs">
-        <span className="font-mono text-slate-200">{mv.version}</span>
+        <span className="font-mono text-ink">{mv.version}</span>
         <div className="flex gap-1">
           {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
             <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
@@ -415,7 +415,7 @@ function VersieRegel({ mv, onChanged, onError }) {
             </span>
           ))}
         </div>
-        <span className="ml-auto text-slate-600">
+        <span className="ml-auto text-ink-3">
           {new Date(mv.created_at).toLocaleDateString('nl-NL',
             { day: '2-digit', month: 'short', year: '2-digit' })}
         </span>
@@ -428,9 +428,9 @@ function VersieRegel({ mv, onChanged, onError }) {
       </div>
 
       {(open || mv.werk.length > 0) && (
-        <div className="mt-1 space-y-1.5 pl-2 border-l border-slate-700/60">
+        <div className="mt-1 space-y-1.5 pl-2 border-l border-line/60">
           {open && (
-            <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 space-y-1.5">
+            <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
               <TextInput placeholder="Consultant" value={cons}
                 onChange={e => setCons(e.target.value)} />
               <TextInput placeholder="Omschrijving (optioneel)" value={note}
@@ -470,8 +470,8 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
     return () => { cancelled = true }
   }, [modelId, refreshKey])
 
-  if (!rows) return <Section title="Versies en werk"><div className="text-slate-600 text-xs">Laden…</div></Section>
-  if (rows.length === 0) return <Section title="Versies en werk"><div className="text-slate-600 text-xs">Nog geen versies</div></Section>
+  if (!rows) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Laden…</div></Section>
+  if (rows.length === 0) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Nog geen versies</div></Section>
 
   // Versies waar werk aan hangt of die ergens draaien eerst; de rest is ruis
   const metInhoud = rows.filter(r => r.werk.length > 0 || r.envs.length > 0)
@@ -488,18 +488,18 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
 
       {rows.length > zichtbaar.length && (
         <button onClick={() => setAlles(true)}
-          className="text-slate-500 hover:text-slate-300 text-xs mt-2 transition-colors">
+          className="text-meta hover:text-ink text-xs mt-2 transition-colors">
           Toon alle {rows.length} versies
         </button>
       )}
       {alles && rows.length > metInhoud.length && (
         <button onClick={() => setAlles(false)}
-          className="text-slate-500 hover:text-slate-300 text-xs mt-2 transition-colors">
+          className="text-meta hover:text-ink text-xs mt-2 transition-colors">
           Toon minder
         </button>
       )}
 
-      <p className="text-slate-600 text-xs mt-2">
+      <p className="text-ink-3 text-xs mt-2">
         Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.
         {werkTotaal === 0 && ' Met "+ Werk" hang je het alsnog aan een versie die er al staat.'}
         {' '}Neem je een versie terug, dan valt de omgeving terug op de vorige.
@@ -517,7 +517,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
   if (!node) return null
 
   const d = node.data
-  const { label: statusLabel, kleur: statusColor } = statusSamenvatting(d.versions)
+  const { label: statusLabel, familie: statusFamilie } = statusSamenvatting(d.versions)
   const isShared = d.sharedIn?.length > 0
   const isModel  = node.type === 'model'
 
@@ -528,22 +528,22 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
   }
 
   return (
-    <aside className="relative bg-slate-800 border-l border-slate-700 flex flex-col overflow-hidden shrink-0"
+    <aside className="relative bg-card border-l border-line flex flex-col overflow-hidden shrink-0"
       style={{ width }}>
 
       {/* Sleepgreep */}
       <div onMouseDown={onMouseDown}
-        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/60 z-20 transition-colors"
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/40 z-20 transition-colors"
         title="Sleep om de breedte aan te passen" />
 
       {/* Vaste kop */}
-      <header className="px-4 pt-3 pb-3 border-b border-slate-700 bg-slate-800">
+      <header className="px-4 pt-3 pb-3 border-b border-line bg-card">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             {isModel ? (
               <InlineEdit
                 value={d.label}
-                textClass="text-slate-100 font-bold text-sm"
+                textClass="text-ink font-bold text-sm"
                 onSave={async next => {
                   if (!next) return
                   try { await updateModel({ modelId: d.modelId, name: next }); await handleChanged() }
@@ -551,24 +551,24 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
                 }}
               />
             ) : (
-              <div className="text-slate-100 font-bold text-sm leading-snug break-words">{d.label}</div>
+              <div className="text-ink font-bold text-sm leading-snug break-words">{d.label}</div>
             )}
             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ background: statusColor + '20', color: statusColor, border: `1px solid ${statusColor}44` }}>
+                style={tint(statusFamilie)}>
                 {statusLabel}
               </span>
-              <span className="text-slate-500 text-xs">{isModel ? 'Model' : 'Interface'}</span>
+              <span className="text-meta text-xs">{isModel ? 'Model' : 'Interface'}</span>
               {isShared && (
                 <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{ background: '#a855f720', color: '#a855f7', border: '1px solid #a855f744' }}>
+                  style={tint(VIOLET)}>
                   Gedeeld
                 </span>
               )}
             </div>
           </div>
           <button onClick={onClose}
-            className="text-slate-600 hover:text-slate-300 text-xl leading-none transition-colors shrink-0">
+            className="text-ink-3 hover:text-ink text-xl leading-none transition-colors shrink-0">
             ×
           </button>
         </div>
@@ -580,12 +580,12 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
 
         {/* Algemene opmerking — gaat over het model zelf, niet over een versie */}
         <Section title="Opmerking">
-          <div className="bg-slate-900/50 border border-slate-700/60 rounded-lg px-2.5 py-2 text-xs">
+          <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 text-xs">
             <InlineEdit
               value={d.notes}
               multiline
               placeholder="Opmerking toevoegen…"
-              textClass="text-slate-300 leading-relaxed"
+              textClass="text-ink leading-relaxed"
               onSave={async next => {
                 try { await updateModel({ modelId: d.modelId, notes: next }); await handleChanged() }
                 catch (e) { setErr(e.message) }
@@ -596,7 +596,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
 
         {/* Versies zoals ze in deze keten worden aangeroepen */}
         <Section title="Versies in deze keten">
-          <div className="bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
+          <div className="bg-page rounded-lg border border-line/50 overflow-hidden">
             {ENV_ORDER.map(naam => (
               <EnvRow
                 key={naam}
@@ -609,7 +609,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
           </div>
           <KetenSamenvatting versions={d.versions} />
           {d.ontbreekt?.length > 0 && (
-            <div className="mt-2 text-xs text-red-400/90 bg-red-950/30 border border-red-900/50 rounded-lg px-2.5 py-2">
+            <div className="mt-2 text-xs text-del bg-del-bg border border-del-bg-2 rounded-lg px-2.5 py-2">
               ⚠ Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export
               van {d.ontbreekt.join(' en ')}.
             </div>

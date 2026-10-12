@@ -76,8 +76,8 @@ export function applyLayout(rawNodes, rawEdges, chainKey, shared, extra = {}) {
     source:    e.source,
     target:    e.target,
     type:      'smoothstep',
-    style:     { stroke: '#334155', strokeWidth: 1.5 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#334155', width: 14, height: 14 },
+    style:     { stroke: 'var(--line-strong)', strokeWidth: 1.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--line-strong)', width: 14, height: 14 },
   }))
 
   let maxX = 0, maxY = 0

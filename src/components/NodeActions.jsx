@@ -13,18 +13,18 @@ function versieVanVandaag() {
 // Uitklapbare actiekaart — neemt het paneel niet over, de gegevens blijven zichtbaar
 function ActieKaart({ titel, subtitel, icon, open, onToggle, children }) {
   return (
-    <div className="border border-slate-700 rounded-lg overflow-hidden">
+    <div className="border border-line rounded-lg overflow-hidden">
       <button onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-700/40 transition-colors">
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-hover transition-colors">
         {icon}
-        <span className="text-xs font-medium text-slate-300">{titel}</span>
-        {subtitel && <span className="text-xs text-slate-600">{subtitel}</span>}
-        <svg className={`w-3.5 h-3.5 ml-auto text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`}
+        <span className="text-xs font-medium text-ink">{titel}</span>
+        {subtitel && <span className="text-xs text-ink-3">{subtitel}</span>}
+        <svg className={`w-3.5 h-3.5 ml-auto text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M6 9l6 6 6-6"/>
         </svg>
       </button>
-      {open && <div className="border-t border-slate-700 p-3 space-y-2">{children}</div>}
+      {open && <div className="border-t border-line p-3 space-y-2">{children}</div>}
     </div>
   )
 }
@@ -93,7 +93,7 @@ export default function NodeActions({ modelName, modelId, versions, ketenModelId
           open={openKaart === 'register'}
           onToggle={() => toggle('register')}
           icon={
-            <svg className="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5 text-mov shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/>
             </svg>
           }>
@@ -117,27 +117,27 @@ export default function NodeActions({ modelName, modelId, versions, ketenModelId
             open={openKaart === 'promote'}
             onToggle={() => toggle('promote')}
             icon={
-              <svg className="w-3.5 h-3.5 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="w-3.5 h-3.5 text-add shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path d="M5 12h14M12 5l7 7-7 7"/>
               </svg>
             }>
-            <div className="flex rounded-lg overflow-hidden border border-slate-700">
+            <div className="flex rounded-lg overflow-hidden border border-line">
               {canToAcc && (
                 <button onClick={() => setTarget('ACC')}
-                  className={`flex-1 text-xs py-1.5 font-medium transition-colors ${target === 'ACC' ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'}`}>
+                  className={`flex-1 text-xs py-1.5 font-medium transition-colors ${target === 'ACC' ? 'bg-acc-bg text-acc' : 'bg-card text-ink-2 hover:text-ink'}`}>
                   TST → ACC
                 </button>
               )}
               {canToProd && (
                 <button onClick={() => setTarget('PROD')}
-                  className={`flex-1 text-xs py-1.5 font-medium transition-colors ${target === 'PROD' ? 'bg-green-700 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'}`}>
+                  className={`flex-1 text-xs py-1.5 font-medium transition-colors ${target === 'PROD' ? 'bg-prod-bg text-prod' : 'bg-card text-ink-2 hover:text-ink'}`}>
                   ACC → PROD
                 </button>
               )}
             </div>
-            <div className="text-slate-500 text-xs">
-              <span className="font-mono text-slate-300">{fromVer}</span> gaat naar {target}
-              <span className="text-slate-600"> — het ticket komt mee uit het werk bij deze versie</span>
+            <div className="text-meta text-xs">
+              <span className="font-mono text-ink">{fromVer}</span> gaat naar {target}
+              <span className="text-ink-3"> — het ticket komt mee uit het werk bij deze versie</span>
             </div>
             <div className="flex gap-2 pt-0.5">
               <Button variant="green" className="flex-1" onClick={handlePromote} disabled={saving}>
@@ -147,7 +147,7 @@ export default function NodeActions({ modelName, modelId, versions, ketenModelId
             </div>
           </ActieKaart>
         ) : (
-          <div className="border border-slate-800 rounded-lg px-3 py-2 flex items-center gap-2 text-xs text-slate-600">
+          <div className="border border-line rounded-lg px-3 py-2 flex items-center gap-2 text-xs text-ink-3">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M20 6L9 17l-5-5"/>
             </svg>

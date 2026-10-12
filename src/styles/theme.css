@@ -1,0 +1,890 @@
+/* =============================================================================
+   KOPIE van econ-toolbox/shared/theme.css (commit 2c85bb9, 2026-10-12).
+
+   De versiebeheer-tool staat los van de toolbox, maar deelt het palet zodat
+   beide er hetzelfde uitzien. Pas dit bestand hier niet aan: wijzigt het palet
+   in de toolbox, kopieer het dan opnieuw. Tokens die alleen deze app nodig
+   heeft staan in src/index.css, als verwijzing naar de tokens hieronder.
+   ========================================================================== */
+
+/* =============================================================================
+   theme.css — het kleurfundament van de Enshore e-Con Toolbox
+
+   Eén palet voor het portaal en beide apps, in twee standen. De namen komen uit
+   CONVENTIES.md §4.5 en zijn onveranderd overgenomen uit Compare Models ++, want
+   `apps/compare-models/css/app.css` gebruikt ze al. Nieuwe tokens zijn eraan
+   toegevoegd voor de schil en het portaal; hernoemd is er niets.
+
+   ── De drie standen ────────────────────────────────────────────────────────
+     géén data-theme        → volg het besturingssysteem
+     data-theme="light"     → de gebruiker koos handmatig licht
+     data-theme="dark"      → de gebruiker koos handmatig donker
+
+   De volgorde hieronder is niet vrij. Het licht-blok staat vooraan als basis;
+   het systeemblok is afgeschermd met `:not([data-theme="light"])` zodat een
+   handmatige keuze voor licht nooit door de systeemstand wordt overruled.
+
+   Let ook op de specificiteit: `:root[data-theme="…"]` en
+   `:root:not([data-theme="light"])` wegen zwaarder dan een kaal `:root`. Een app
+   die daarna zijn eigen `:root { --bg: … }` laadt, overschrijft dus wél de basis
+   maar níét de gekozen stand. Dat is met opzet — zo blijft het donkere thema
+   heel, ongeacht de volgorde van de <link>-tags.
+
+   ── Laadvolgorde: waar de <link> hoort ─────────────────────────────────────
+   Zo hoort de <head> van een app eruit te zien:
+
+     <script src="../../shared/theme.js"></script>          eerst, blokkerend
+     <link rel="stylesheet" href="../../shared/theme.css">  daarna het palet
+     <link rel="stylesheet" href="css/app.css">             dan de app zelf
+     <link rel="stylesheet" href="../../shared/shell.css">  de schil sluit af
+
+   theme.js staat vooraan en zonder `defer`, want die zet `data-theme` nog
+   voordat er iets getekend is; met defer zie je een flits van het verkeerde
+   thema.
+
+   Dubbele kale `:root`-blokken wegen even zwaar (0,1,0), dus wint het laatste.
+   Daarom heeft Compare Models ++ zijn eigen `:root` niet meer: de veertig
+   tokens uit `apps/compare-models/css/app.css` staan hieronder, inclusief
+   `--row-h`, `--code-h`, `--mono` en `--sans`. Alleen `--split` en `--hx`
+   blijven in de app, want die horen op componenten en worden door `ui.js`
+   gezet — het zijn geen thema-waarden.
+
+   Daarna zijn ook de 76 vaste kleurcodes buiten dat blok (41 unieke, 58 in
+   app.css en 24 in `js/ui.js`) omgezet naar tokens. Ze staan hieronder onder
+   de kop "Compare Models ++". Wat daar niet bij staat maar wel kleur bevat:
+   de CSS van het geëxporteerde rapport (`ui.js`, `buildReport`). Dat is een
+   los HTML-bestand dat `theme.css` niet meelaadt en dus zijn eigen `:root`
+   heeft — bewust in één vaste, lichte stand.
+
+   ── Wat de donkere waarden moeten halen ────────────────────────────────────
+   Elke `-ink` haalt ≥ 4.5:1 op zijn eigen `-bg` én op zijn `-bg-2`. Twee
+   uitzonderingen zijn opzettelijk en géén tekst-op-vlak: `--ink-4` is de
+   trap voor getallen die juist stil moeten blijven (een opgeschoven
+   rulenummer), en `--primary-off-*` is een uitgeschakelde knop, waarvoor
+   WCAG 1.4.3 een uitzondering maakt.
+
+   ── Huisstijl: Enshore, alleen in de schil ─────────────────────────────────
+   Het merk is Enshore: oranje #f47b20 naar rood #e42420 (het verloop uit de
+   presentatiesjablonen), en het rood #e21f19 van het logo. Dat zit op het
+   logo, het portaal, de hoofdknop (--primary), het app-blokje en de
+   toetsenbordfocus — nergens anders.
+
+   Bewust níét op --accent: rood en oranje betekenen in de apps al iets
+   (verwijderd, traag, waarschuwing; CONVENTIES §5). Een rode selectie of een
+   rood actief tabblad zou daarop gaan lijken. --accent en de selectie
+   (--sel-*, --accent-bg, --hover-bg) zijn daarom neutraal slate-grijs. De
+   statuskleuren zijn niet aangeraakt.
+
+   ── Waar het donkere palet vandaan komt ────────────────────────────────────
+   De smaak is die van Trace Analyzer: de slate-schaal, met #0f172a als
+   achtergrond, #1e293b als kaartvlak, #334155 als lijn (het accent was blauw
+   tot de Enshore-huisstijl, zie hierboven). Die
+   drie waarden zijn letterlijk overgenomen, zodat de app die er al zo uitziet
+   niet hoeft te verschuiven.
+
+   De diff-kleuren zijn niet overgenomen maar opnieuw gekozen. De lichte set is
+   pastel op wit: bleke vlakken, donkere tekst. Dat kan op donker niet — een
+   pastel vlak wordt daar een lichtbak. De donkere set draait de verhouding om:
+   een gedempt, verzadigd vlak met lichte tekst erop. Drie eisen stuurden de
+   keuze, en alle drie zijn nagerekend:
+
+     1. `-ink` haalt op zijn eigen `-bg-2` minstens 4.5:1. Dat is de strengste
+        eis, niet `-bg`: de badges en statusiconen in Compare Models ++ zetten de
+        tekst op de nadrukkleur, en die is lichter dan het vlak.
+     2. `-bg-2` wijkt zichtbaar af van `-bg`, anders verdwijnt de woordmarkering
+        binnen de gewijzigde regel.
+     3. De vijf vlakken blijven uit elkaar te houden voor iemand die rood-groen
+        slecht ziet. Gemeten met een deuteranopie- en protanopiesimulatie in
+        CIE-Lab: het zwakste paar in het donker (verwijderd/gewijzigd) haalt
+        ΔE 11, waar het zwakste paar in het bestaande lichte palet op ΔE 7 zit.
+        Donker is op dat punt dus niet slechter dan wat er al stond.
+
+   Rood en geel schuiven onder deuteranopie altijd naar elkaar toe; daarom
+   dragen de tekens `+` `−` `~` de betekenis, niet de kleur alleen
+   (CONVENTIES.md §5).
+
+   De e-Con-elementkleuren houden hun tint — property roze, reference blauw,
+   dynamic reference groen, optie geel, rulemap amber — maar worden lichter en
+   verzadigder, want de donkere varianten uit de Studio verdwijnen op #1e293b.
+   Ze zijn kleurblokjes, geen tekst; leesbaarheid als tekst is geen eis.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   LICHT — de basis, en tegelijk de handmatige keuze voor licht. Twee selectors
+   op één blok, zodat de waarden maar één keer in dit bestand staan.
+   -------------------------------------------------------------------------- */
+:root,
+:root[data-theme="light"] {
+  --bg:            #f1f4f8;
+  --surface:       #ffffff;
+  --surface-2:     #f7f9fc;
+  --ink:           #16202c;
+  --ink-2:         #5b6b7c;
+  --ink-3:         #8b9aab;
+  --line:          #dce3ec;
+  --line-2:        #eaeff5;
+  --accent:        #334155;
+  --accent-ink:    #ffffff;
+
+  /* e-Con elementkleuren — volgen de e-Con Studio, CONVENTIES.md §5 */
+  --el-property:   #e5177f;
+  --el-reference:  #1f6fd0;
+  --el-dynamic:    #16a34a;
+  --el-option:     #e0b400;
+  --el-folder:     #e8a33d;
+  --el-rule:       #6b7c90;
+
+  /* diff-kleuren — patroon --<rol>-bg / -bg-2 (nadruk) / -ink */
+  --add-bg:        #e4f8e9;
+  --add-bg-2:      #b9edc6;
+  --add-ink:       #0f6b2c;
+  --del-bg:        #fde8e8;
+  --del-bg-2:      #f7c4c4;
+  --del-ink:       #9b1c1c;
+  --chg-bg:        #fef6dc;
+  --chg-bg-2:      #f7e08a;
+  --chg-ink:       #7c5a00;
+  --mov-bg:        #e6f1fd;
+  --mov-bg-2:      #bcd9f7;
+  --mov-ink:       #10508f;
+  --cond-bg:       #f2ebfd;
+  --cond-bg-2:     #dcc9fb;
+  --cond-ink:      #5b21b6;
+  --off-bg:        #ecedef;
+  --off-ink:       #4b5563;
+  --filler:        #eef1f5;
+  --filler-line:   #e2e7ee;
+  --ws-bg:         #f4f6f9;
+
+  /* status buiten de diff */
+  --ok:            #0f6b2c;
+  --danger:        #9b1c1c;
+
+  /* de schil: de terugkeerbalk bovenaan elke app */
+  --shell-bg:         #ffffff;
+  --shell-line:       #dce3ec;
+  --shell-ink:        #5b6b7c;
+  --shell-ink-strong: #16202c;
+  --shell-ink-hover:  #16202c;
+  --shell-ink-dim:    #8b9aab;
+  --shell-sep:        #c3cedb;
+  --shell-hover:      #eef2f7;
+
+  /* het portaal: merkteken, tegels en hun icoonkleuren */
+  --brand-from:      #f47b20;
+  --brand-to:        #e42420;
+  --brand-ink:       #ffffff;
+  --brand-glow:      rgba(228,36,32,.28);
+  --tile-bg:         #ffffff;
+  --tile-bg-hover:   #fbfcfe;
+  --tile-line:       #dce3ec;
+  --tile-line-hover: #eb4a28;
+  --ic-trace-bg:     #fef0e6;
+  --ic-trace-ink:    #c2540f;
+  --ic-compare-bg:   #fdebe5;
+  --ic-compare-ink:  #c8391c;
+  --ic-explore-bg:   #fde7e6;
+  --ic-explore-ink:  #c01c17;
+  /* Matrix Compare: amber, de warme tint die de andere drie tegels nog vrijlaten */
+  --ic-matrix-bg:    #fdf3e1;
+  --ic-matrix-ink:   #a15c07;
+
+  /* toetsenbordfocus en diepte */
+  --focus:       #e21f19;
+  --shadow:      0 1px 2px rgba(16,32,44,.06);
+  --shadow-lift: 0 6px 20px rgba(16,32,44,.10);
+  /* diepte in drie treden: rust (kaart), verhoogd (widget, sleepkader), opgetild
+     (onder de muis). Knoppen krijgen een eigen, kleinere trap. */
+  --shadow-1:           0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.08);
+  --shadow-2:           0 1px 2px rgba(16,24,40,.04), 0 4px 10px -2px rgba(16,24,40,.08), 0 12px 24px -8px rgba(16,24,40,.10);
+  --shadow-3:           0 2px 4px rgba(16,24,40,.05), 0 14px 30px -8px rgba(16,24,40,.18);
+  --shadow-btn:         0 1px 2px rgba(16,24,40,.07), 0 2px 4px -1px rgba(16,24,40,.06);
+  --shadow-btn-hover:   0 2px 4px rgba(16,24,40,.08), 0 6px 14px -4px rgba(16,24,40,.16);
+  --shadow-primary:     0 1px 2px rgba(168,32,15,.25), 0 6px 16px -4px rgba(219,55,20,.45);
+  --shadow-primary-hover:0 2px 4px rgba(168,32,15,.25), 0 10px 24px -6px rgba(219,55,20,.55);
+  --shadow-inset:       inset 0 1px 2px rgba(16,24,40,.06);
+  --shadow-bar:         0 1px 2px rgba(16,24,40,.05), 0 2px 8px -2px rgba(16,24,40,.07);
+  /* de hoofdknop als Enshore-verloop: het meest oranje begin dat met witte
+     tekst nog 4.5:1 haalt (#db3714), naar een dieper rood */
+  --primary-from:       #db3714;
+  --primary-to:         #c42a17;
+  /* sleepvlakken en de gloed bovenaan een startscherm */
+  --drop-line:          #f0a370;
+  --drop-line-hover:    #e96b0c;
+  --drop-bg-hover:      #fff6ef;
+  --hero-glow:          rgba(244,123,32,.13);
+
+  --scroll-track:       #e7ecf3;
+  --scroll-thumb:       #c3cedb;
+  --scroll-thumb-hover: #a8b6c6;
+
+  /* ── Compare Models ++ ────────────────────────────────────────────────
+     Kleuren die tot nu toe vast in apps/compare-models/css/app.css stonden.
+     Ze staan hier omdat de donkere stand ze nodig heeft; de rolnamen volgen
+     CONVENTIES.md §4.5. */
+
+  /* de donkere kopbalk van deze app: blijft donker, ook in het lichte thema */
+  --topbar-from:        #1d2b3a;
+  --topbar-to:          #16202c;
+  --topbar-ink:         #eaf1f8;
+  --topbar-ink-2:       #dfe9f3;
+  --topbar-ink-3:       #9db0c4;
+  --topbar-ink-strong:  #ffffff;
+  --topbar-accent:      #f79a4f;
+  --topbar-shadow:      0 1px 0 rgba(0,0,0,.25);
+  --topbar-field-bg:    rgba(255,255,255,.07);
+  --topbar-field-bg-2:  rgba(255,255,255,.14);
+  --topbar-field-line:  rgba(255,255,255,.28);
+  --topbar-btn-bg:      rgba(255,255,255,.10);
+  --topbar-btn-bg-2:    rgba(255,255,255,.20);
+  --topbar-btn-line:    rgba(255,255,255,.20);
+
+  /* knoppen. --primary is Enshore-rood en alleen voor de hoofdknop en het
+     app-blokje; --accent is neutraal grijs voor al het andere interactieve
+     (tabbladen, selectie, focusranden, grepen). Zie de kop van dit bestand. */
+  --accent-hover:       #1e293b;
+  --primary-off-bg:     #44586d;
+  --primary-off-ink:    #8fa2b5;
+  --primary:            #db3714;
+  --primary-hover:      #a8200f;
+  --primary-ink:        #ffffff;
+
+  /* het oordeel op het overzicht: één groot vlak met een verloop */
+  --verdict-from:       #334155;
+  --verdict-to:         #1e293b;
+  --verdict-ink:        #ffffff;
+  --verdict-ok-from:    #15803d;
+  --verdict-ok-to:      #0d6b31;
+
+  /* bleek accentvlak, rijhover en selectie in een boom */
+  --accent-bg:          #e6eaf0;
+  --accent-bg-ink:      #1f2a37;
+  --focus-ring:         #f9cdb0;
+  --hover-bg:           #f2f4f7;
+  --sel-bg:             #e6eaf0;
+  --sel-bg-2:           #d8dee7;
+  --sel-ink:            #1f2a37;
+
+  /* lijnen, sleepgrepen en de vierde inkttrap (bewust stil gehouden getallen) */
+  --line-strong:        #c4cfdc;
+  --grip:               #c2ccd8;
+  --grip-2:             #9fb0c4;
+  --swatch-line:        rgba(0,0,0,.08);
+  --ink-4:              #aab3bf;
+
+  /* koppen in de codeweergave: sectieband, rulekop en zijn tweede regel */
+  --band-bg:            #eef2f7;
+  --rulehead-bg:        #e3ecf7;
+  --rulesub-bg:         #eef4fb;
+  --rulehead-line:      #c3d6ec;
+  --rulehead-line-2:    #a8c4e2;
+
+  /* wijzigingsklassen die nog geen eigen familie hadden (CONVENTIES §5) */
+  --lbl-bg:             #f5f0fb;
+  --lbl-bg-2:           #efe6fb;
+  --lbl-ink:            #59328f;
+  --ord-bg-2:           #ddd6fe;
+  --ord-ink:            #4c1d95;
+  --dyn-bg-2:           #dcf5e4;
+  --dyn-ink:            #0f6b2c;
+  --ws-bg-2:            #e6eaf0;
+
+  /* aandachtspunten en where used */
+  --warn-bg:            #fff8f1;
+  --warn-ink:           #9a3412;
+  --wu-ink:             #0e7490;
+
+  /* het changelog-uitvoerveld: een donkere put, ook in het lichte thema */
+  --output-bg:          #16202c;
+  --output-ink:         #dfe9f3;
+
+  /* wachtscherm */
+  --overlay-bg:         rgba(22,32,44,.72);
+  --overlay-ink:        #ffffff;
+  --spinner-track:      rgba(255,255,255,.25);
+
+  /* diepte: de zwevende rulekop en de kaart onder de muis */
+  --shadow-head:        0 2px 6px rgba(22,32,44,.13);
+  --shadow-card:        0 2px 8px rgba(16,32,44,.10);
+
+
+  /* ── Trace Analyzer ───────────────────────────────────────────────────
+     De duratieschaal is een schaal, geen status: traag/matig/snel staan
+     daarom los van --del/--chg/--add, die "verwijderd/gewijzigd/nieuw"
+     betekenen. Het gevolgde veld is Enshore-oranje (op verzoek, oktober
+     2026; was violet). Dat ligt in tint dicht bij --mid (matig traag):
+     het ◎-teken en de volgbalk dragen het onderscheid, niet de kleur. */
+
+  /* één inkttrap onder --ink-2 die op --bg én --surface nog 4.5:1 haalt;
+     --ink-3 blijft daar met ~3:1 onder en is voor tekst dus geen optie */
+  --meta-ink:           #626f81;
+
+  /* duraties: > 500 ms, 100–500 ms, ≤ 100 ms */
+  --slow-bg:            #fde8e8;
+  --slow-bg-2:          #f7c4c4;
+  --slow-ink:           #9b1c1c;
+  --mid-bg:             #fff1e2;
+  --mid-bg-2:           #fbd3a8;
+  --mid-ink:            #9a3412;
+  --fast-bg:            #e4f8e9;
+  --fast-bg-2:          #b9edc6;
+  --fast-ink:           #0f6b2c;
+
+  /* het gevolgde veld, en de veldnaam zelf */
+  --follow-bg:          #fff4ec;
+  --follow-bg-2:        #ffd9bf;
+  --follow-ink:         #a84507;
+  --field-ink:          #0e6f86;
+  /* ── Model Explorer ───────────────────────────────────────────────────
+     Twee rollen die de andere apps niet kennen: wie LEEST een veld en wie
+     SCHRIJFT erin. Ze staan los van de diff-familie — add/del/chg betekenen
+     "nieuw/verwijderd/gewijzigd" en dat is hier niet aan de orde.
+     Nagerekend op -ink over -bg-2 (de bindende meting): licht 5,45 en 5,22,
+     donker 5,04 en 6,04. Onderling staan de vlakken op dE 35 (licht) en
+     dE 52 (donker) uit elkaar.
+     Let op: `read` ligt in het lichte thema op dE 12 van `mov`. Dat is dicht
+     bij, en het is bewust — beide zijn blauw. De betekenis hangt daarom aan
+     het teken (◀ schrijft, ▶ leest), niet aan de kleur; CONVENTIES §5. */
+  --read-bg:           #e0f4f8;
+  --read-bg-2:         #b3e3ef;
+  --read-ink:          #0b5c70;
+  --write-bg:          #fdeaf4;
+  --write-bg-2:        #f6c3dd;
+  --write-ink:         #9a1360;
+
+  /* ── Kanaalvarianten ──────────────────────────────────────────────────
+     Tailwind kan geen alpha leggen op een kant-en-klare kleur uit een
+     var(): `bg-slow/10` zou dan geruisloos ondoorzichtig worden. Voor de
+     rollen die Trace Analyzer mét transparantie gebruikt staat de kleur
+     daarom óók als losse kanalen, zodat de Tailwind-config
+     `rgb(var(--x-rgb) / <alpha-value>)` kan schrijven. Waarde en
+     kanaalvariant horen bij elkaar — wijzig je de een, wijzig de ander. */
+  --bg-rgb:             241 244 248;
+  --surface-rgb:        255 255 255;
+  --line-rgb:           220 227 236;
+  --accent-rgb:         51 65 85;
+  --primary-rgb:        219 55 20;
+  --chg-ink-rgb:        124 90 0;
+  --lbl-ink-rgb:        89 50 143;
+  --slow-ink-rgb:       155 28 28;
+  --mid-ink-rgb:        154 52 18;
+  --fast-ink-rgb:       15 107 44;
+  --follow-ink-rgb:     168 69 7;
+  --field-ink-rgb:      14 111 134;
+
+  /* maten en lettertypes — themaonafhankelijk, staan daarom alleen hier */
+  --row-h:  23px;
+  --code-h: 19px;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   DONKER — stand 1 van 2: het besturingssysteem staat op donker en de gebruiker
+   heeft niets gekozen. De `:not()` is wat de handmatige keuze laat winnen.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:            #0f172a;
+    --surface:       #1e293b;
+    --surface-2:     #172234;
+    --ink:           #f1f5f9;
+    --ink-2:         #94a3b8;
+    --ink-3:         #64748b;
+    --line:          #334155;
+    --line-2:        #273548;
+    --accent:        #cbd5e1;
+    --accent-ink:    #0b1220;
+
+    --el-property:   #f472b6;
+    --el-reference:  #4d90f0;
+    --el-dynamic:    #4ade80;
+    --el-option:     #e8c341;
+    --el-folder:     #f0a94b;
+    --el-rule:       #94a3b8;
+
+    --add-bg:        #143a23;
+    --add-bg-2:      #1f5b37;
+    --add-ink:       #7ee2a0;
+    --del-bg:        #3b1216;
+    --del-bg-2:      #66191f;
+    --del-ink:       #ffadad;
+    --chg-bg:        #3f3111;
+    --chg-bg-2:      #7a5a12;
+    --chg-ink:       #ffdf87;
+    --mov-bg:        #0e3a63;
+    --mov-bg-2:      #1a548f;
+    --mov-ink:       #a6d0fc;
+    --cond-bg:       #33244f;
+    --cond-bg-2:     #6b3fc4;
+    --cond-ink:      #e0d5ff;
+    --off-bg:        #242e3b;
+    --off-ink:       #9aa8b8;
+    --filler:        #16202f;
+    --filler-line:   #1d2939;
+    --ws-bg:         #1a2536;
+
+    --ok:            #4ade80;
+    --danger:        #f87171;
+
+    --shell-bg:         #0f172a;
+    --shell-line:       #1e293b;
+    --shell-ink:        #94a3b8;
+    --shell-ink-strong: #cbd5e1;
+    --shell-ink-hover:  #f1f5f9;
+    --shell-ink-dim:    #64748b;
+    --shell-sep:        #334155;
+    --shell-hover:      #1e293b;
+
+    --brand-from:      #f47b20;
+    --brand-to:        #e42420;
+    --brand-ink:       #ffffff;
+    --brand-glow:      rgba(228,36,32,.35);
+    --tile-bg:         #1e293b;
+    --tile-bg-hover:   #243044;
+    --tile-line:       #334155;
+    --tile-line-hover: #f47b20;
+    --ic-trace-bg:     #3d2413;
+    --ic-trace-ink:    #fdba74;
+    --ic-compare-bg:   #431c12;
+    --ic-compare-ink:  #fb9b7b;
+    --ic-explore-bg:   #45191a;
+    --ic-explore-ink:  #fca5a5;
+    --ic-matrix-bg:    #3a2a10;
+    --ic-matrix-ink:   #fcd34d;
+
+    --focus:       #f47b20;
+    --shadow:      0 1px 2px rgba(0,0,0,.40);
+    --shadow-lift: 0 8px 24px rgba(0,0,0,.45);
+    /* diepte: in het donker sterker, plus een lichtrand van 1px aan de bovenkant */
+    --shadow-1:           0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.25);
+    --shadow-2:           inset 0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.30), 0 10px 24px -8px rgba(0,0,0,.55);
+    --shadow-3:           inset 0 1px 0 rgba(255,255,255,.05), 0 4px 8px rgba(0,0,0,.35), 0 18px 36px -10px rgba(0,0,0,.65);
+    --shadow-btn:         inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.40), 0 2px 6px -1px rgba(0,0,0,.35);
+    --shadow-btn-hover:   inset 0 1px 0 rgba(255,255,255,.06), 0 2px 4px rgba(0,0,0,.45), 0 8px 16px -4px rgba(0,0,0,.55);
+    --shadow-primary:     0 1px 2px rgba(0,0,0,.40), 0 6px 18px -4px rgba(219,55,20,.55);
+    --shadow-primary-hover:0 2px 4px rgba(0,0,0,.40), 0 10px 26px -6px rgba(219,55,20,.65);
+    --shadow-inset:       inset 0 1px 2px rgba(0,0,0,.35);
+    --shadow-bar:         0 1px 2px rgba(0,0,0,.40), 0 2px 10px -2px rgba(0,0,0,.35);
+    --primary-from:       #db3714;
+    --primary-to:         #c42a17;
+    --drop-line:          #7c4520;
+    --drop-line-hover:    #f47b20;
+    --drop-bg-hover:      #2a1e18;
+    --hero-glow:          rgba(244,123,32,.10);
+
+    --scroll-track:       #1e293b;
+    --scroll-thumb:       #475569;
+    --scroll-thumb-hover: #64748b;
+
+    /* ── Compare Models ++ ────────────────────────────────────────────────
+       Kleuren die tot nu toe vast in apps/compare-models/css/app.css stonden.
+       Ze staan hier omdat de donkere stand ze nodig heeft; de rolnamen volgen
+       CONVENTIES.md §4.5. */
+
+    /* de donkere kopbalk van deze app: blijft donker, ook in het lichte thema */
+    --topbar-from:        #1e293b;
+    --topbar-to:          #0f172a;
+    --topbar-ink:         #f1f5f9;
+    --topbar-ink-2:       #cbd5e1;
+    --topbar-ink-3:       #94a3b8;
+    --topbar-ink-strong:  #ffffff;
+    --topbar-accent:      #f79a4f;
+    --topbar-shadow:      0 1px 0 rgba(0,0,0,.55);
+    --topbar-field-bg:    rgba(255,255,255,.06);
+    --topbar-field-bg-2:  rgba(255,255,255,.12);
+    --topbar-field-line:  rgba(255,255,255,.24);
+    --topbar-btn-bg:      rgba(255,255,255,.09);
+    --topbar-btn-bg-2:    rgba(255,255,255,.18);
+    --topbar-btn-line:    rgba(255,255,255,.18);
+
+    /* knoppen */
+    --accent-hover:       #e2e8f0;
+    --primary-off-bg:     #2f3d51;
+    --primary-off-ink:    #6b7b8f;
+    --primary:            #db3714;
+    --primary-hover:      #a8200f;
+    --primary-ink:        #ffffff;
+
+    /* het oordeel op het overzicht: één groot vlak met een verloop */
+    --verdict-from:       #3b4a60;
+    --verdict-to:         #273449;
+    --verdict-ink:        #ffffff;
+    --verdict-ok-from:    #15803d;
+    --verdict-ok-to:      #0a4d24;
+
+    /* bleek accentvlak, rijhover en selectie in een boom */
+    --accent-bg:          #273244;
+    --accent-bg-ink:      #e2e8f0;
+    --focus-ring:         #9a3412;
+    --hover-bg:           #243044;
+    --sel-bg:             #2a364a;
+    --sel-bg-2:           #3a4860;
+    --sel-ink:            #e2e8f0;
+
+    /* lijnen, sleepgrepen en de vierde inkttrap (bewust stil gehouden getallen) */
+    --line-strong:        #475569;
+    --grip:               #475569;
+    --grip-2:             #64748b;
+    --swatch-line:        rgba(255,255,255,.16);
+    --ink-4:              #55637a;
+
+    /* koppen in de codeweergave: sectieband, rulekop en zijn tweede regel */
+    --band-bg:            #1c2942;
+    --rulehead-bg:        #1e3350;
+    --rulesub-bg:         #1a2c46;
+    --rulehead-line:      #3c6598;
+    --rulehead-line-2:    #4a76ad;
+
+    /* wijzigingsklassen die nog geen eigen familie hadden (CONVENTIES §5) */
+    --lbl-bg:             #2a2140;
+    --lbl-bg-2:           #4c3a80;
+    --lbl-ink:            #e2d5ff;
+    --ord-bg-2:           #4a3a9e;
+    --ord-ink:            #ddd6fe;
+    --dyn-bg-2:           #215c3f;
+    --dyn-ink:            #8ce6ae;
+    --ws-bg-2:            #2b3a50;
+
+    /* aandachtspunten en where used */
+    --warn-bg:            #33220f;
+    --warn-ink:           #fdba74;
+    --wu-ink:             #67e8f9;
+
+    /* het changelog-uitvoerveld: een donkere put, ook in het lichte thema */
+    --output-bg:          #0a1120;
+    --output-ink:         #dbe4ee;
+
+    /* wachtscherm */
+    --overlay-bg:         rgba(2,6,15,.78);
+    --overlay-ink:        #ffffff;
+    --spinner-track:      rgba(255,255,255,.25);
+
+    /* diepte: de zwevende rulekop en de kaart onder de muis */
+    --shadow-head:        0 2px 8px rgba(0,0,0,.55);
+    --shadow-card:        0 2px 10px rgba(0,0,0,.50);
+
+    /* ── Trace Analyzer ───────────────────────────────────────────────────
+       De duratieschaal is een schaal, geen status: traag/matig/snel staan
+       daarom los van --del/--chg/--add, die "verwijderd/gewijzigd/nieuw"
+       betekenen. Het gevolgde veld is Enshore-oranje (op verzoek, oktober
+     2026; was violet). Dat ligt in tint dicht bij --mid (matig traag):
+     het ◎-teken en de volgbalk dragen het onderscheid, niet de kleur. */
+
+    /* één inkttrap onder --ink-2 die op --bg én --surface nog 4.5:1 haalt;
+       --ink-3 blijft daar met ~3:1 onder en is voor tekst dus geen optie */
+    --meta-ink:           #8493a8;
+
+    /* duraties: > 500 ms, 100–500 ms, ≤ 100 ms */
+    --slow-bg:            #3b1216;
+    --slow-bg-2:          #66191f;
+    --slow-ink:           #f87171;
+    --mid-bg:             #33220f;
+    --mid-bg-2:           #7a3d12;
+    --mid-ink:            #fb923c;
+    --fast-bg:            #143a23;
+    --fast-bg-2:          #1f5b37;
+    --fast-ink:           #4ade80;
+
+    /* het gevolgde veld, en de veldnaam zelf */
+    --follow-bg:          #2e1d10;
+    --follow-bg-2:        #5b3417;
+    --follow-ink:         #ffb47e;
+    --field-ink:          #7dd3fc;
+    /* ── Model Explorer ───────────────────────────────────────────────────
+       Twee rollen die de andere apps niet kennen: wie LEEST een veld en wie
+       SCHRIJFT erin. Ze staan los van de diff-familie — add/del/chg betekenen
+       "nieuw/verwijderd/gewijzigd" en dat is hier niet aan de orde.
+       Nagerekend op -ink over -bg-2 (de bindende meting): licht 5,45 en 5,22,
+       donker 5,04 en 6,04. Onderling staan de vlakken op dE 35 (licht) en
+       dE 52 (donker) uit elkaar.
+       Let op: `read` ligt in het lichte thema op dE 12 van `mov`. Dat is dicht
+       bij, en het is bewust — beide zijn blauw. De betekenis hangt daarom aan
+       het teken (◀ schrijft, ▶ leest), niet aan de kleur; CONVENTIES §5. */
+    --read-bg:           #0d3644;
+    --read-bg-2:         #155468;
+    --read-ink:          #7dd3fc;
+    --write-bg:          #3a1130;
+    --write-bg-2:        #6a1e51;
+    --write-ink:         #f9a8d4;
+
+    /* ── Kanaalvarianten ──────────────────────────────────────────────────
+       Tailwind kan geen alpha leggen op een kant-en-klare kleur uit een
+       var(): `bg-slow/10` zou dan geruisloos ondoorzichtig worden. Voor de
+       rollen die Trace Analyzer mét transparantie gebruikt staat de kleur
+       daarom óók als losse kanalen, zodat de Tailwind-config
+       `rgb(var(--x-rgb) / <alpha-value>)` kan schrijven. Waarde en
+       kanaalvariant horen bij elkaar — wijzig je de een, wijzig de ander. */
+    --bg-rgb:             15 23 42;
+    --surface-rgb:        30 41 59;
+    --line-rgb:           51 65 85;
+    --accent-rgb:         203 213 225;
+    --primary-rgb:        219 55 20;
+    --chg-ink-rgb:        255 223 135;
+    --lbl-ink-rgb:        226 213 255;
+    --slow-ink-rgb:       248 113 113;
+    --mid-ink-rgb:        251 146 60;
+    --fast-ink-rgb:       74 222 128;
+    --follow-ink-rgb:     255 180 126;
+    --field-ink-rgb:      125 211 252;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   DONKER — stand 2 van 2: de gebruiker koos donker, ongeacht wat het
+   besturingssysteem doet. Dezelfde waarden; CSS kent geen manier om één blok
+   binnen én buiten een media-query te laten gelden zonder een omweg via extra
+   variabelen, en die omweg maakt het in de devtools onleesbaar.
+   -------------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  --bg:            #0f172a;
+  --surface:       #1e293b;
+  --surface-2:     #172234;
+  --ink:           #f1f5f9;
+  --ink-2:         #94a3b8;
+  --ink-3:         #64748b;
+  --line:          #334155;
+  --line-2:        #273548;
+  --accent:        #cbd5e1;
+  --accent-ink:    #0b1220;
+
+  --el-property:   #f472b6;
+  --el-reference:  #4d90f0;
+  --el-dynamic:    #4ade80;
+  --el-option:     #e8c341;
+  --el-folder:     #f0a94b;
+  --el-rule:       #94a3b8;
+
+  --add-bg:        #143a23;
+  --add-bg-2:      #1f5b37;
+  --add-ink:       #7ee2a0;
+  --del-bg:        #3b1216;
+  --del-bg-2:      #66191f;
+  --del-ink:       #ffadad;
+  --chg-bg:        #3f3111;
+  --chg-bg-2:      #7a5a12;
+  --chg-ink:       #ffdf87;
+  --mov-bg:        #0e3a63;
+  --mov-bg-2:      #1a548f;
+  --mov-ink:       #a6d0fc;
+  --cond-bg:       #33244f;
+  --cond-bg-2:     #6b3fc4;
+  --cond-ink:      #e0d5ff;
+  --off-bg:        #242e3b;
+  --off-ink:       #9aa8b8;
+  --filler:        #16202f;
+  --filler-line:   #1d2939;
+  --ws-bg:         #1a2536;
+
+  --ok:            #4ade80;
+  --danger:        #f87171;
+
+  --shell-bg:         #0f172a;
+  --shell-line:       #1e293b;
+  --shell-ink:        #94a3b8;
+  --shell-ink-strong: #cbd5e1;
+  --shell-ink-hover:  #f1f5f9;
+  --shell-ink-dim:    #64748b;
+  --shell-sep:        #334155;
+  --shell-hover:      #1e293b;
+
+  --brand-from:      #f47b20;
+  --brand-to:        #e42420;
+  --brand-ink:       #ffffff;
+  --brand-glow:      rgba(228,36,32,.35);
+  --tile-bg:         #1e293b;
+  --tile-bg-hover:   #243044;
+  --tile-line:       #334155;
+  --tile-line-hover: #f47b20;
+  --ic-trace-bg:     #3d2413;
+  --ic-trace-ink:    #fdba74;
+  --ic-compare-bg:   #431c12;
+  --ic-compare-ink:  #fb9b7b;
+  --ic-explore-bg:   #45191a;
+  --ic-explore-ink:  #fca5a5;
+  --ic-matrix-bg:    #3a2a10;
+  --ic-matrix-ink:   #fcd34d;
+
+  --focus:       #f47b20;
+  --shadow:      0 1px 2px rgba(0,0,0,.40);
+  --shadow-lift: 0 8px 24px rgba(0,0,0,.45);
+  /* diepte: in het donker sterker, plus een lichtrand van 1px aan de bovenkant */
+  --shadow-1:           0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.25);
+  --shadow-2:           inset 0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.30), 0 10px 24px -8px rgba(0,0,0,.55);
+  --shadow-3:           inset 0 1px 0 rgba(255,255,255,.05), 0 4px 8px rgba(0,0,0,.35), 0 18px 36px -10px rgba(0,0,0,.65);
+  --shadow-btn:         inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.40), 0 2px 6px -1px rgba(0,0,0,.35);
+  --shadow-btn-hover:   inset 0 1px 0 rgba(255,255,255,.06), 0 2px 4px rgba(0,0,0,.45), 0 8px 16px -4px rgba(0,0,0,.55);
+  --shadow-primary:     0 1px 2px rgba(0,0,0,.40), 0 6px 18px -4px rgba(219,55,20,.55);
+  --shadow-primary-hover:0 2px 4px rgba(0,0,0,.40), 0 10px 26px -6px rgba(219,55,20,.65);
+  --shadow-inset:       inset 0 1px 2px rgba(0,0,0,.35);
+  --shadow-bar:         0 1px 2px rgba(0,0,0,.40), 0 2px 10px -2px rgba(0,0,0,.35);
+  --primary-from:       #db3714;
+  --primary-to:         #c42a17;
+  --drop-line:          #7c4520;
+  --drop-line-hover:    #f47b20;
+  --drop-bg-hover:      #2a1e18;
+  --hero-glow:          rgba(244,123,32,.10);
+
+  --scroll-track:       #1e293b;
+  --scroll-thumb:       #475569;
+  --scroll-thumb-hover: #64748b;
+
+  /* ── Compare Models ++ ────────────────────────────────────────────────
+     Kleuren die tot nu toe vast in apps/compare-models/css/app.css stonden.
+     Ze staan hier omdat de donkere stand ze nodig heeft; de rolnamen volgen
+     CONVENTIES.md §4.5. */
+
+  /* de donkere kopbalk van deze app: blijft donker, ook in het lichte thema */
+  --topbar-from:        #1e293b;
+  --topbar-to:          #0f172a;
+  --topbar-ink:         #f1f5f9;
+  --topbar-ink-2:       #cbd5e1;
+  --topbar-ink-3:       #94a3b8;
+  --topbar-ink-strong:  #ffffff;
+  --topbar-accent:      #f79a4f;
+  --topbar-shadow:      0 1px 0 rgba(0,0,0,.55);
+  --topbar-field-bg:    rgba(255,255,255,.06);
+  --topbar-field-bg-2:  rgba(255,255,255,.12);
+  --topbar-field-line:  rgba(255,255,255,.24);
+  --topbar-btn-bg:      rgba(255,255,255,.09);
+  --topbar-btn-bg-2:    rgba(255,255,255,.18);
+  --topbar-btn-line:    rgba(255,255,255,.18);
+
+  /* knoppen */
+  --accent-hover:       #e2e8f0;
+  --primary-off-bg:     #2f3d51;
+  --primary-off-ink:    #6b7b8f;
+  --primary:            #db3714;
+  --primary-hover:      #a8200f;
+  --primary-ink:        #ffffff;
+
+  /* het oordeel op het overzicht: één groot vlak met een verloop */
+  --verdict-from:       #3b4a60;
+  --verdict-to:         #273449;
+  --verdict-ink:        #ffffff;
+  --verdict-ok-from:    #15803d;
+  --verdict-ok-to:      #0a4d24;
+
+  /* bleek accentvlak, rijhover en selectie in een boom */
+  --accent-bg:          #273244;
+  --accent-bg-ink:      #e2e8f0;
+  --focus-ring:         #9a3412;
+  --hover-bg:           #243044;
+  --sel-bg:             #2a364a;
+  --sel-bg-2:           #3a4860;
+  --sel-ink:            #e2e8f0;
+
+  /* lijnen, sleepgrepen en de vierde inkttrap (bewust stil gehouden getallen) */
+  --line-strong:        #475569;
+  --grip:               #475569;
+  --grip-2:             #64748b;
+  --swatch-line:        rgba(255,255,255,.16);
+  --ink-4:              #55637a;
+
+  /* koppen in de codeweergave: sectieband, rulekop en zijn tweede regel */
+  --band-bg:            #1c2942;
+  --rulehead-bg:        #1e3350;
+  --rulesub-bg:         #1a2c46;
+  --rulehead-line:      #3c6598;
+  --rulehead-line-2:    #4a76ad;
+
+  /* wijzigingsklassen die nog geen eigen familie hadden (CONVENTIES §5) */
+  --lbl-bg:             #2a2140;
+  --lbl-bg-2:           #4c3a80;
+  --lbl-ink:            #e2d5ff;
+  --ord-bg-2:           #4a3a9e;
+  --ord-ink:            #ddd6fe;
+  --dyn-bg-2:           #215c3f;
+  --dyn-ink:            #8ce6ae;
+  --ws-bg-2:            #2b3a50;
+
+  /* aandachtspunten en where used */
+  --warn-bg:            #33220f;
+  --warn-ink:           #fdba74;
+  --wu-ink:             #67e8f9;
+
+  /* het changelog-uitvoerveld: een donkere put, ook in het lichte thema */
+  --output-bg:          #0a1120;
+  --output-ink:         #dbe4ee;
+
+  /* wachtscherm */
+  --overlay-bg:         rgba(2,6,15,.78);
+  --overlay-ink:        #ffffff;
+  --spinner-track:      rgba(255,255,255,.25);
+
+  /* diepte: de zwevende rulekop en de kaart onder de muis */
+  --shadow-head:        0 2px 8px rgba(0,0,0,.55);
+  --shadow-card:        0 2px 10px rgba(0,0,0,.50);
+
+  /* ── Trace Analyzer ───────────────────────────────────────────────────
+     De duratieschaal is een schaal, geen status: traag/matig/snel staan
+     daarom los van --del/--chg/--add, die "verwijderd/gewijzigd/nieuw"
+     betekenen. Het gevolgde veld is Enshore-oranje (op verzoek, oktober
+     2026; was violet). Dat ligt in tint dicht bij --mid (matig traag):
+     het ◎-teken en de volgbalk dragen het onderscheid, niet de kleur. */
+
+  /* één inkttrap onder --ink-2 die op --bg én --surface nog 4.5:1 haalt;
+     --ink-3 blijft daar met ~3:1 onder en is voor tekst dus geen optie */
+  --meta-ink:           #8493a8;
+
+  /* duraties: > 500 ms, 100–500 ms, ≤ 100 ms */
+  --slow-bg:            #3b1216;
+  --slow-bg-2:          #66191f;
+  --slow-ink:           #f87171;
+  --mid-bg:             #33220f;
+  --mid-bg-2:           #7a3d12;
+  --mid-ink:            #fb923c;
+  --fast-bg:            #143a23;
+  --fast-bg-2:          #1f5b37;
+  --fast-ink:           #4ade80;
+
+  /* het gevolgde veld, en de veldnaam zelf */
+  --follow-bg:          #2e1d10;
+  --follow-bg-2:        #5b3417;
+  --follow-ink:         #ffb47e;
+  --field-ink:          #7dd3fc;
+  /* ── Model Explorer ───────────────────────────────────────────────────
+     Twee rollen die de andere apps niet kennen: wie LEEST een veld en wie
+     SCHRIJFT erin. Ze staan los van de diff-familie — add/del/chg betekenen
+     "nieuw/verwijderd/gewijzigd" en dat is hier niet aan de orde.
+     Nagerekend op -ink over -bg-2 (de bindende meting): licht 5,45 en 5,22,
+     donker 5,04 en 6,04. Onderling staan de vlakken op dE 35 (licht) en
+     dE 52 (donker) uit elkaar.
+     Let op: `read` ligt in het lichte thema op dE 12 van `mov`. Dat is dicht
+     bij, en het is bewust — beide zijn blauw. De betekenis hangt daarom aan
+     het teken (◀ schrijft, ▶ leest), niet aan de kleur; CONVENTIES §5. */
+  --read-bg:           #0d3644;
+  --read-bg-2:         #155468;
+  --read-ink:          #7dd3fc;
+  --write-bg:          #3a1130;
+  --write-bg-2:        #6a1e51;
+  --write-ink:         #f9a8d4;
+
+  /* ── Kanaalvarianten ──────────────────────────────────────────────────
+     Tailwind kan geen alpha leggen op een kant-en-klare kleur uit een
+     var(): `bg-slow/10` zou dan geruisloos ondoorzichtig worden. Voor de
+     rollen die Trace Analyzer mét transparantie gebruikt staat de kleur
+     daarom óók als losse kanalen, zodat de Tailwind-config
+     `rgb(var(--x-rgb) / <alpha-value>)` kan schrijven. Waarde en
+     kanaalvariant horen bij elkaar — wijzig je de een, wijzig de ander. */
+  --bg-rgb:             15 23 42;
+  --surface-rgb:        30 41 59;
+  --line-rgb:           51 65 85;
+  --accent-rgb:         203 213 225;
+  --primary-rgb:        219 55 20;
+  --chg-ink-rgb:        255 223 135;
+  --lbl-ink-rgb:        226 213 255;
+  --slow-ink-rgb:       248 113 113;
+  --mid-ink-rgb:        251 146 60;
+  --fast-ink-rgb:       74 222 128;
+  --follow-ink-rgb:     255 180 126;
+  --field-ink-rgb:      125 211 252;
+}
+
+/* Vertelt de browser welke stand actief is, zodat formuliervelden, scrollbalken
+   en het selectievlak meelopen. Anders houdt een invoerveld zijn witte kader in
+   het donkere thema. */
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+:root[data-theme="dark"]  { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }

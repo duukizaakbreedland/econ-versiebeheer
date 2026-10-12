@@ -9,11 +9,11 @@ import { Banner, InlineEdit, Button, ConfirmButton, TextInput, Select } from '..
 // ─── Bouwstenen ───────────────────────────────────────────────────────────────
 function Card({ title, subtitle, right, children, className = '' }) {
   return (
-    <section className={`bg-slate-800/60 border border-slate-700 rounded-xl overflow-hidden ${className}`}>
-      <header className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-700/80">
+    <section className={`bg-card border border-line rounded-xl overflow-hidden ${className}`}>
+      <header className="flex items-center gap-3 px-4 py-2.5 border-b border-line/80">
         <div className="min-w-0">
-          <h3 className="text-slate-200 text-xs font-semibold">{title}</h3>
-          {subtitle && <p className="text-slate-500 text-xs mt-0.5">{subtitle}</p>}
+          <h3 className="text-ink text-xs font-semibold">{title}</h3>
+          {subtitle && <p className="text-meta text-xs mt-0.5">{subtitle}</p>}
         </div>
         {right && <div className="ml-auto shrink-0">{right}</div>}
       </header>
@@ -25,15 +25,15 @@ function Card({ title, subtitle, right, children, className = '' }) {
 function Rij({ children, className = '', ...props }) {
   return (
     <div {...props}
-      className={`group flex items-center gap-3 px-4 py-2 border-b border-slate-700/40 last:border-b-0
-                  hover:bg-slate-700/25 transition-colors ${className}`}>
+      className={`group flex items-center gap-3 px-4 py-2 border-b border-line/40 last:border-b-0
+                  hover:bg-hover transition-colors ${className}`}>
       {children}
     </div>
   )
 }
 
 function Leeg({ children }) {
-  return <div className="px-4 py-6 text-center text-slate-600 text-xs">{children}</div>
+  return <div className="px-4 py-6 text-center text-ink-3 text-xs">{children}</div>
 }
 
 function TypeStip({ type }) {
@@ -43,8 +43,8 @@ function TypeStip({ type }) {
       className="shrink-0 rounded-full"
       style={{
         width: 7, height: 7,
-        background: isIface ? '#3b82f6' : '#64748b',
-        boxShadow: isIface ? '0 0 0 2px #3b82f625' : '0 0 0 2px #64748b25',
+        background: isIface ? 'var(--mov-ink)' : 'var(--ink-3)',
+        boxShadow: isIface ? '0 0 0 2px var(--mov-bg)' : '0 0 0 2px var(--off-bg)',
       }} />
   )
 }
@@ -69,7 +69,7 @@ function KetenLijst({ chains, selectedId, onSelect, run }) {
       right={<Button onClick={() => setOpen(o => !o)}>{open ? 'Annuleer' : '+ Nieuw'}</Button>}>
 
       {open && (
-        <div className="px-4 py-3 bg-slate-900/40 border-b border-slate-700/60 space-y-2">
+        <div className="px-4 py-3 bg-card-2 border-b border-line/60 space-y-2">
           <TextInput autoFocus placeholder="Weergavenaam" value={label} onChange={e => setLabel(e.target.value)} />
           <TextInput placeholder="sleutel (kleine letters)" value={key} onChange={e => setKey(e.target.value)} />
           <Button variant="primary" className="w-full" disabled={!key.trim() || !label.trim()}
@@ -88,17 +88,17 @@ function KetenLijst({ chains, selectedId, onSelect, run }) {
         const actief = selectedId === c.id
         return (
           <Rij key={c.id} onClick={() => onSelect(c.id)}
-            className={`cursor-pointer ${actief ? 'bg-slate-700/40' : ''}`}
-            style={{ boxShadow: actief ? 'inset 2px 0 0 #3b82f6' : 'none' }}>
+            className={`cursor-pointer ${actief ? 'bg-info-bg' : ''}`}
+            style={{ boxShadow: actief ? 'inset 2px 0 0 var(--accent)' : 'none' }}>
             <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
               <InlineEdit value={c.label}
-                textClass={`text-xs ${actief ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}
+                textClass={`text-xs ${actief ? 'text-ink font-semibold' : 'text-ink'}`}
                 onSave={v => v && run(() => updateChain({ id: c.id, label: v }))} />
               <div className="flex items-center gap-2 mt-0.5">
-                <InlineEdit value={c.key} mono textClass="text-slate-600 text-xs"
+                <InlineEdit value={c.key} mono textClass="text-ink-3 text-xs"
                   onSave={v => v && run(() => updateChain({ id: c.id, key: v.toLowerCase() }))} />
-                <span className="text-slate-700 text-xs">·</span>
-                <span className="text-slate-600 text-xs">{c.chain_nodes.length} nodes</span>
+                <span className="text-ink-4 text-xs">·</span>
+                <span className="text-ink-3 text-xs">{c.chain_nodes.length} nodes</span>
               </div>
             </div>
             <Acties>
@@ -137,8 +137,8 @@ function KetenInhoud({ chain, models, run }) {
         {chain.chain_nodes.map(n => (
           <Rij key={n.id}>
             <TypeStip type={n.models?.type} />
-            <span className="text-slate-300 text-xs flex-1 min-w-0 truncate">{n.models?.name}</span>
-            <span className="font-mono text-slate-600 text-xs shrink-0">{n.node_key}</span>
+            <span className="text-ink text-xs flex-1 min-w-0 truncate">{n.models?.name}</span>
+            <span className="font-mono text-ink-3 text-xs shrink-0">{n.node_key}</span>
             <Acties>
               <ConfirmButton confirmLabel="Uit keten halen?"
                 onConfirm={() => run(() => removeChainNode({ chainId: chain.id, nodeKey: n.node_key }))}>
@@ -148,7 +148,7 @@ function KetenInhoud({ chain, models, run }) {
           </Rij>
         ))}
 
-        <div className="px-4 py-2.5 bg-slate-900/40 border-t border-slate-700/60">
+        <div className="px-4 py-2.5 bg-card-2 border-t border-line/60">
           {!maakNieuw ? (
             <div className="flex items-center gap-2">
               <Select value={modelId} onChange={e => setModelId(e.target.value)} className="flex-1 min-w-0">
@@ -168,7 +168,7 @@ function KetenInhoud({ chain, models, run }) {
                 Voeg toe
               </Button>
               <button onClick={() => setMaakNieuw(true)}
-                className="text-slate-500 hover:text-slate-300 text-xs whitespace-nowrap transition-colors">
+                className="text-meta hover:text-ink text-xs whitespace-nowrap transition-colors">
                 nieuw aanmaken
               </button>
             </div>
@@ -189,7 +189,7 @@ function KetenInhoud({ chain, models, run }) {
                 Maak en voeg toe
               </Button>
               <button onClick={() => setMaakNieuw(false)}
-                className="text-slate-500 hover:text-slate-300 text-xs transition-colors">
+                className="text-meta hover:text-ink text-xs transition-colors">
                 terug
               </button>
             </div>
@@ -202,11 +202,11 @@ function KetenInhoud({ chain, models, run }) {
 
         {chain.chain_edges.map(e => (
           <Rij key={e.id}>
-            <span className="text-slate-300 text-xs truncate max-w-[40%]">{naamVan(e.source_key)}</span>
-            <svg className="w-3.5 h-3.5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <span className="text-ink text-xs truncate max-w-[40%]">{naamVan(e.source_key)}</span>
+            <svg className="w-3.5 h-3.5 text-ink-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
-            <span className="text-slate-300 text-xs truncate max-w-[40%]">{naamVan(e.target_key)}</span>
+            <span className="text-ink text-xs truncate max-w-[40%]">{naamVan(e.target_key)}</span>
             <Acties>
               <ConfirmButton confirmLabel="Verbinding weg?" onConfirm={() => run(() => removeChainEdge(e.id))}>
                 Verwijder
@@ -215,12 +215,12 @@ function KetenInhoud({ chain, models, run }) {
           </Rij>
         ))}
 
-        <div className="px-4 py-2.5 bg-slate-900/40 border-t border-slate-700/60 flex items-center gap-2">
+        <div className="px-4 py-2.5 bg-card-2 border-t border-line/60 flex items-center gap-2">
           <Select value={bron} onChange={e => setBron(e.target.value)} className="flex-1 min-w-0">
             <option value="">Van…</option>
             {chain.chain_nodes.map(n => <option key={n.id} value={n.node_key}>{n.models?.name}</option>)}
           </Select>
-          <svg className="w-3.5 h-3.5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="w-3.5 h-3.5 text-ink-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
           <Select value={doel} onChange={e => setDoel(e.target.value)} className="flex-1 min-w-0">
@@ -267,7 +267,7 @@ function ModelLijst({ models, chains, run }) {
 
       {open && (
         <>
-          <div className="px-4 py-2.5 bg-slate-900/40 border-b border-slate-700/60">
+          <div className="px-4 py-2.5 bg-card-2 border-b border-line/60">
             <TextInput placeholder="Zoeken…" value={zoek} onChange={e => setZoek(e.target.value)} />
           </div>
 
@@ -279,10 +279,10 @@ function ModelLijst({ models, chains, run }) {
                 <Rij key={m.id}>
                   <TypeStip type={m.type} />
                   <div className="flex-1 min-w-0">
-                    <InlineEdit value={m.name} textClass="text-slate-300 text-xs"
+                    <InlineEdit value={m.name} textClass="text-ink text-xs"
                       onSave={v => v && run(() => updateModel({ modelId: m.id, name: v }))} />
                   </div>
-                  <span className="text-slate-600 text-xs shrink-0 truncate max-w-[14rem] text-right"
+                  <span className="text-ink-3 text-xs shrink-0 truncate max-w-[14rem] text-right"
                     title={inKetens.join(', ')}>
                     {inKetens.length === 0 ? 'niet in gebruik' : inKetens.join(', ')}
                   </span>
@@ -333,7 +333,7 @@ export default function BeheerView({ onRefresh }) {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-full text-slate-500 text-sm">Laden…</div>
+    return <div className="flex items-center justify-center h-full text-meta text-sm">Laden…</div>
   }
 
   const sel = chains?.find(c => c.id === selId)
@@ -343,8 +343,8 @@ export default function BeheerView({ onRefresh }) {
       <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
 
         <div>
-          <h2 className="text-slate-200 font-semibold text-sm">Beheer</h2>
-          <p className="text-slate-500 text-xs mt-0.5">
+          <h2 className="text-ink font-semibold text-sm">Beheer</h2>
+          <p className="text-meta text-xs mt-0.5">
             De structuur: welke ketens er zijn, welke modellen erin zitten en wat aan wat hangt.
             Versies en promoties beheer je in de Dependency Graph.
           </p>

@@ -1,6 +1,8 @@
 // Helpers die afgeleide gegevens uit de ketenstructuur berekenen.
 // De ketens zelf komen uit Supabase via fetchChains() in api.js.
 
+import { ORANJE, GEEL, VIOLET, GROEN } from './kleuren.js'
+
 export const ENVS = ['PROD', 'ACC', 'TST']
 
 // Gedeelde submodellen: welke modellen komen in meerdere ketens voor?
@@ -49,10 +51,10 @@ export function statusSamenvatting(versions) {
   const prod = versions.PROD
   const acc  = versieStatus(versions.ACC, prod)
   const tst  = versieStatus(versions.TST, prod)
-  if ([acc, tst].includes('achter')) return { label: 'Loopt achter op PROD', kleur: '#f97316' }
-  if ([acc, tst].includes('voor'))   return { label: 'Loopt voor op PROD',   kleur: '#fbbf24' }
-  if ([acc, tst].includes('anders')) return { label: 'Wijkt af van PROD',    kleur: '#a855f7' }
-  return { label: 'Gelijk in alle omgevingen', kleur: '#22c55e' }
+  if ([acc, tst].includes('achter')) return { label: 'Loopt achter op PROD', familie: ORANJE }
+  if ([acc, tst].includes('voor'))   return { label: 'Loopt voor op PROD',   familie: GEEL }
+  if ([acc, tst].includes('anders')) return { label: 'Wijkt af van PROD',    familie: VIOLET }
+  return { label: 'Gelijk in alle omgevingen', familie: GROEN }
 }
 
 // ─── Versies zoals ze in déze keten worden aangeroepen ────────────────────────

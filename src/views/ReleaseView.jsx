@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { fetchReleases, updateDeploymentLog } from '../lib/api.js'
 import { InlineEdit, Banner } from '../components/ui/index.jsx'
+import { ENV } from '../lib/kleuren.js'
 
 const ENV_CFG = {
-  PROD: { color: '#22c55e', bg: '#052e16', border: '#166534' },
-  ACC:  { color: '#60a5fa', bg: '#0c1f3d', border: '#1d4ed8' },
-  TST:  { color: '#fbbf24', bg: '#1c1200', border: '#92400e' },
+  PROD: { color: ENV.PROD.ink, bg: ENV.PROD.bg, border: ENV.PROD.line },
+  ACC:  { color: ENV.ACC.ink,  bg: ENV.ACC.bg,  border: ENV.ACC.line  },
+  TST:  { color: ENV.TST.ink,  bg: ENV.TST.bg,  border: ENV.TST.line  },
 }
 
 function formatDate(iso) {
@@ -30,23 +31,23 @@ function LogEntry({ log, onChanged, onError }) {
   }
 
   return (
-    <div className={`bg-slate-800 border border-slate-700 rounded-xl overflow-hidden ${busy ? 'opacity-60' : ''}`}>
+    <div className={`bg-card border border-line rounded-xl overflow-hidden ${busy ? 'opacity-60' : ''}`}>
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
           <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
             style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
             {env}
           </span>
-          <span className="text-slate-400 text-xs flex-shrink-0">{formatDate(log.deployed_at)}</span>
+          <span className="text-ink-2 text-xs flex-shrink-0">{formatDate(log.deployed_at)}</span>
           <span className="text-xs">
-            <InlineEdit value={log.ticket} placeholder="ticket" mono textClass="text-slate-400"
+            <InlineEdit value={log.ticket} placeholder="ticket" mono textClass="text-ink-2"
               onSave={v => run(() => updateDeploymentLog({ id: log.id, ticket: v }))} />
           </span>
-          <span className="ml-auto text-slate-600 text-xs flex-shrink-0">
+          <span className="ml-auto text-ink-3 text-xs flex-shrink-0">
             {deployed.length} model{deployed.length !== 1 ? 'len' : ''}
           </span>
           <button onClick={() => setOpen(o => !o)}
-            className="text-slate-600 hover:text-slate-400 transition-colors shrink-0"
+            className="text-ink-3 hover:text-ink-2 transition-colors shrink-0"
             title="Details">
             <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
               fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -62,11 +63,11 @@ function LogEntry({ log, onChanged, onError }) {
               r => r.model_versions?.models?.name === v.model_versions?.models?.name)
             return (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="text-slate-300 truncate">{v.model_versions?.models?.name}</span>
+                <span className="text-ink truncate">{v.model_versions?.models?.name}</span>
                 {oud && (
                   <>
-                    <span className="font-mono text-slate-600 line-through">{oud.model_versions?.version}</span>
-                    <svg className="w-3 h-3 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <span className="font-mono text-ink-3 line-through">{oud.model_versions?.version}</span>
+                    <svg className="w-3 h-3 text-ink-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                       <path d="M5 12h14M12 5l7 7-7 7"/>
                     </svg>
                   </>
@@ -82,17 +83,17 @@ function LogEntry({ log, onChanged, onError }) {
       </div>
 
       {open && (
-        <div className="border-t border-slate-700 px-4 py-3 space-y-3">
+        <div className="border-t border-line px-4 py-3 space-y-3">
           <div>
-            <div className="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1.5">Notitie</div>
+            <div className="text-meta text-xs font-medium uppercase tracking-wide mb-1.5">Notitie</div>
             <div className="text-xs">
               <InlineEdit value={log.notes} placeholder="Klik om een notitie toe te voegen"
-                textClass="text-slate-300" className="w-full"
+                textClass="text-ink" className="w-full"
                 onSave={v => run(() => updateDeploymentLog({ id: log.id, notes: v }))} />
             </div>
           </div>
 
-          <div className="text-slate-600 text-xs pt-1 border-t border-slate-700/60">
+          <div className="text-ink-3 text-xs pt-1 border-t border-line/60">
             Terugdraaien doe je bij het model zelf, in de Dependency Graph.
           </div>
         </div>
@@ -120,7 +121,7 @@ export default function ReleaseView() {
   if (loading && !logs) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-slate-500 text-sm">Laden…</div>
+        <div className="text-meta text-sm">Laden…</div>
       </div>
     )
   }
@@ -128,7 +129,7 @@ export default function ReleaseView() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-red-400 text-sm">{error}</div>
+        <div className="text-del text-sm">{error}</div>
       </div>
     )
   }
@@ -137,9 +138,9 @@ export default function ReleaseView() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-slate-200 font-semibold text-sm">Release geschiedenis</h2>
+          <h2 className="text-ink font-semibold text-sm">Release geschiedenis</h2>
           <button onClick={load}
-            className="text-slate-500 hover:text-slate-300 text-xs flex items-center gap-1.5 transition-colors">
+            className="text-meta hover:text-ink text-xs flex items-center gap-1.5 transition-colors">
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
               fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M1 4v6h6M23 20v-6h-6"/>
@@ -156,7 +157,7 @@ export default function ReleaseView() {
         )}
 
         {logs?.length === 0 ? (
-          <div className="text-center py-16 text-slate-600 text-sm">
+          <div className="text-center py-16 text-ink-3 text-sm">
             Nog geen releases geregistreerd
           </div>
         ) : (

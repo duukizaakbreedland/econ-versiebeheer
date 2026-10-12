@@ -1,19 +1,123 @@
+@import './styles/theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Rollen van deze app ──────────────────────────────────────────────────────
+   Alleen verwijzingen naar tokens uit theme.css, nooit een eigen kleurcode: zo
+   kloppen ze in licht en donker zonder drie blokken bij te houden.
+
+   De omgevingen houden hun vertrouwde tint — PROD groen, ACC blauw, TST geel —
+   maar lenen hun waarden van de toolboxfamilies met die tint. */
+:root {
+  --env-prod:      var(--add-ink);
+  --env-prod-bg:   var(--add-bg);
+  --env-prod-line: var(--add-bg-2);
+  --env-acc:       var(--mov-ink);
+  --env-acc-bg:    var(--mov-bg);
+  --env-acc-line:  var(--mov-bg-2);
+  --env-tst:       var(--chg-ink);
+  --env-tst-bg:    var(--chg-bg);
+  --env-tst-line:  var(--chg-bg-2);
+}
+
+[hidden] { display: none !important; }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: #0f172a;
-  font-family: system-ui, -apple-system, sans-serif;
-  color: #e2e8f0;
+  background: var(--bg);
+  font-family: var(--sans);
+  color: var(--ink);
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #64748b; }
+::-webkit-scrollbar-track { background: var(--scroll-track); }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
-.react-flow__renderer { background: #0f172a; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ── Diepte, zoals in de toolbox ──────────────────────────────────────────────
+   Kaarten en knoppen krijgen schaduw via Tailwinds eigen --tw-shadow, niet
+   rechtstreeks via box-shadow: een ring is in Tailwind óók een box-shadow en
+   mag niet wegvallen. Wat al een eigen shadow-klasse heeft houdt die. */
+[class*="bg-card"][class*="rounded"][class*="border"]:not([class*="shadow"]) {
+  --tw-shadow: var(--shadow-1);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+button:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-full):is([class*="bg-"], [class*="border"]):not(.btn-primary):not(.btn-ok):not([class*="shadow"]):not([class*="border-transparent"]) {
+  --tw-shadow: var(--shadow-btn);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+button:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-full):is([class*="bg-"], [class*="border"]):not(.btn-primary):not(.btn-ok):not([class*="shadow"]):not([class*="border-transparent"]):hover:not(:disabled) {
+  --tw-shadow: var(--shadow-btn-hover);
+}
+
+/* De hoofdknop: het Enshore-verloop met een eigen gloed, zoals in de toolbox */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-from), var(--primary-to));
+  color: var(--primary-ink);
+  box-shadow: var(--shadow-primary);
+  transition: transform .12s, box-shadow .12s;
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--primary-to), var(--primary-hover));
+  box-shadow: var(--shadow-primary-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) { transform: none; box-shadow: var(--shadow-primary); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+/* Doorzetten naar een omgeving: groen, het verloop van het "in orde"-oordeel */
+.btn-ok {
+  background: linear-gradient(135deg, var(--verdict-ok-from), var(--verdict-ok-to));
+  color: var(--verdict-ink);
+  box-shadow: var(--shadow-btn);
+}
+.btn-ok:hover:not(:disabled) { box-shadow: var(--shadow-btn-hover); filter: brightness(1.08); }
+.btn-ok:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+/* ── De balk bovenaan, in de vorm van de toolboxbalk ──────────────────────── */
+.app-bar {
+  height: 44px;
+  background: var(--shell-bg);
+  border-bottom: 1px solid var(--shell-line);
+  box-shadow: var(--shadow-bar);
+  position: relative;
+  z-index: 2;
+  color: var(--shell-ink);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 8px;
+  border: 1px solid var(--shell-sep);
+  border-radius: 999px;
+  background: var(--shell-bg);
+  color: var(--shell-ink);
+  font: 500 11.5px/1 var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-btn);
+  transition: background .12s, color .12s, border-color .12s, box-shadow .12s;
+}
+.theme-toggle:hover {
+  background: var(--shell-hover);
+  color: var(--shell-ink-hover);
+  border-color: var(--shell-ink-dim);
+  box-shadow: var(--shadow-btn-hover);
+}
+
+/* ── React Flow ───────────────────────────────────────────────────────────── */
+.react-flow__renderer { background: var(--bg); }
+.react-flow__attribution { background: transparent; }
+.react-flow__attribution a { color: var(--ink-3); }
+
+/* De zachte Enshore-gloed bovenaan een startscherm (inlogscherm) */
+.hero-glow { background: radial-gradient(900px 380px at 50% -60px, var(--hero-glow), transparent 70%), var(--bg); }

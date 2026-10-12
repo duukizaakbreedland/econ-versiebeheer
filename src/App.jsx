@@ -7,6 +7,7 @@ import LoginView from './views/LoginView.jsx'
 import WachtwoordWijzigen from './components/WachtwoordWijzigen.jsx'
 import { useChains } from './hooks/useChains.js'
 import { useAuth, signOut } from './lib/auth.jsx'
+import { ThemeToggle } from './lib/theme.jsx'
 
 const TABS = [
   { id: 'overzicht', label: 'Overzicht',            icon: IconGrid },
@@ -66,7 +67,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-500 text-sm">
+      <div className="min-h-screen bg-page flex items-center justify-center text-meta text-sm">
         Laden…
       </div>
     )
@@ -75,7 +76,7 @@ export default function App() {
   if (!session) return <LoginView />
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
+    <div className="min-h-screen bg-page flex flex-col">
       <Header loading={loading} error={error} onRefresh={refresh}
         email={session.user?.email} onWachtwoord={() => setWachtwoordOpen(true)} />
       {wachtwoordOpen && (
@@ -92,60 +93,58 @@ export default function App() {
   )
 }
 
+// De balk heeft de vorm van de toolboxbalk (44 px, schaduw naar beneden,
+// themaschakelaar rechts), maar de app staat op zichzelf: geen link naar het
+// portaal, en het Enshore-icoon in plaats van het toolbox-logo.
 function Header({ loading, error, onRefresh, email, onWachtwoord }) {
+  const icoonKnop = 'p-1.5 rounded-md text-meta hover:text-ink hover:bg-hover transition-colors'
   return (
-    <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-          <IconGraph c="w-4 h-4 text-white" />
-        </div>
-        <div>
-          <h1 className="text-white font-semibold text-sm leading-none">eCon Versiebeheer</h1>
-          <p className="text-slate-400 text-xs mt-0.5">CPQ Model Dependency Tracker</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        {error && (
-          <span className="text-red-400 text-xs">Verbindingsfout</span>
-        )}
-        <button onClick={onRefresh} disabled={loading}
-          className="text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-colors"
+    <header className="app-bar px-4 flex items-center gap-3 shrink-0">
+      <img src={`${import.meta.env.BASE_URL}brand/icon.svg`} alt="" className="w-7 h-7 shrink-0" />
+      <h1 className="text-ink font-semibold text-sm leading-none">eCon Versiebeheer</h1>
+      <span className="text-ink-3 text-xs hidden md:inline">
+        <span className="mr-2 text-line-2">/</span>CPQ Model Dependency Tracker
+      </span>
+
+      <div className="ml-auto flex items-center gap-2">
+        {error && <span className="text-del text-xs">Verbindingsfout</span>}
+        <button onClick={onRefresh} disabled={loading} className={`${icoonKnop} disabled:opacity-40`}
           title="Vernieuwen">
           <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
           </svg>
         </button>
-        <span className="text-slate-400 text-xs">Organisatie:</span>
-        <span className="bg-slate-700 text-slate-200 text-xs px-2 py-1 rounded font-medium">Buva</span>
+        <span className="text-meta text-xs">Organisatie</span>
+        <span className="bg-info-bg text-info text-xs px-2 py-0.5 rounded-md font-medium">Buva</span>
         {email && (
           <>
-            <span className="w-px h-4 bg-slate-700" />
-            <span className="text-slate-500 text-xs max-w-[14rem] truncate" title={email}>{email}</span>
-            <button onClick={onWachtwoord}
-              className="text-slate-500 hover:text-slate-200 transition-colors"
-              title="Wachtwoord wijzigen">
+            <span className="w-px h-4 bg-line mx-1" />
+            <span className="text-meta text-xs max-w-[14rem] truncate hidden sm:inline" title={email}>{email}</span>
+            <button onClick={onWachtwoord} className={icoonKnop} title="Wachtwoord wijzigen">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <rect x="3" y="11" width="18" height="11" rx="2"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
               </svg>
             </button>
-            <button onClick={signOut}
-              className="text-slate-500 hover:text-slate-200 transition-colors"
-              title="Uitloggen">
+            <button onClick={signOut} className={icoonKnop} title="Uitloggen">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
               </svg>
             </button>
           </>
         )}
+        <span className="w-px h-4 bg-line mx-1" />
+        <ThemeToggle />
       </div>
     </header>
   )
 }
 
+// Tabbladen zoals in de toolbox: het actieve tabblad neutraal (accent), niet
+// in een merkkleur — rood betekent in de apps al iets anders.
 function Tabs({ active, onChange }) {
   return (
-    <div className="bg-slate-800 border-b border-slate-700 px-6 flex gap-1">
+    <nav className="bg-card border-b border-line px-4 flex gap-1 shrink-0">
       {TABS.map(tab => {
         const Icon = tab.icon
         const isActive = active === tab.id
@@ -153,10 +152,10 @@ function Tabs({ active, onChange }) {
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               isActive
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-accent text-ink'
+                : 'border-transparent text-ink-2 hover:text-ink'
             }`}
           >
             <Icon />
@@ -164,6 +163,6 @@ function Tabs({ active, onChange }) {
           </button>
         )
       })}
-    </div>
+    </nav>
   )
 }
