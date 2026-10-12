@@ -4,8 +4,9 @@ Supabase-project: `econ-versiebeheer` (`nuayzeiewrrmhuqqumfb`, regio eu-central-
 
 ## Migraties
 
-Uitvoeren in volgorde via **Supabase Dashboard → SQL Editor**. Ze zijn allemaal al
-toegepast op de live database; ze staan hier zodat het schema reproduceerbaar is.
+Uitvoeren via de **Supabase CLI** (zie hieronder). Ze zijn allemaal al toegepast op
+de live database en staan ook zo in de migratiegeschiedenis
+(`supabase_migrations.schema_migrations`).
 
 | Bestand | Inhoud |
 |---|---|
@@ -18,7 +19,27 @@ toegepast op de live database; ze staan hier zodat het schema reproduceerbaar is
 | `migrations/007_rls.sql` | Row Level Security op alle tabellen: ingelogde gebruikers mogen alles, bezoekers niets |
 | `migrations/008_dependency_missing_flag.sql` | `dependencies.child_missing_in_export`: aangeroepen versie ontbrak in de export |
 | `migrations/009_model_opmerking.sql` | `models.notes`: algemene opmerking bij een model, los van een versie |
+| `migrations/010_function_search_path.sql` | Vaste `search_path` voor `get_current_versions` (adviseur-waarschuwing) |
 | `seed.sql` | Buva-data uit het oorspronkelijke Excel-overzicht |
+
+## Supabase CLI
+
+De CLI staat als devDependency in het project (`npx supabase`). Eenmalig per pc:
+
+```bash
+npx supabase login
+npx supabase link --project-ref nuayzeiewrrmhuqqumfb
+```
+
+Bij `link` mag je de vraag om het databasewachtwoord overslaan: alles hieronder loopt
+via de Management API, zonder wachtwoord en zonder Docker.
+
+| Wat | Commando |
+|---|---|
+| Welke migraties staan lokaal en live | `npx supabase migration list --linked` |
+| Nieuwe migraties doorvoeren | `npx supabase db push --linked --dry-run`, daarna zonder `--dry-run` |
+| Losse query op live | `npx supabase db query --linked "select ..."` |
+| Security- en performancecheck | `npx supabase db advisors --linked` |
 
 ## Koppelingen
 
@@ -36,9 +57,12 @@ de graph kijkt alleen naar de versie die op dat moment in de omgeving actief is.
 
 ## Werkafspraak
 
-Elke schemawijziging krijgt een nieuw genummerd bestand in `migrations/`. Nooit meer
-rechtstreeks in de SQL-editor wijzigen zonder het bestand toe te voegen — daar liep
-`work_items.ticket` op stuk.
+Elke schemawijziging krijgt een nieuw genummerd bestand in `migrations/` en gaat live
+met `db push`. Nooit meer rechtstreeks in de SQL-editor wijzigen — daar liep
+`work_items.ticket` op stuk, en de CLI weet dan niet dat de wijziging er al is.
+
+Nummer met de hand door (`011_...sql`), niet met `supabase migration new`: dat maakt
+een naam met een tijdstempel, en dan raakt de nummering door elkaar.
 
 ## Beveiliging
 
