@@ -132,6 +132,12 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
       .sort((a, b) => score(b) - score(a))[0] ?? null
   }, [selected, nodes])
 
+  // De nodes zoals de graph ze toont, voor het promoveren van de hele keten
+  const ketenNodes = useMemo(
+    () => initNodes.map(n => ({ type: n.type, modelId: n.data.modelId, label: n.data.label, versions: n.data.versions })),
+    [initNodes]
+  )
+
   // Wie roept deze node aan, en op welke versie? Over een interface heen: de
   // ouder van een submodel is het model vóór de interface.
   const aanroepers = useMemo(() => {
@@ -161,7 +167,7 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
             </div>
           </div>
           <div className="ml-auto">
-            <ChainPromoteForm chainKey={chainKey} chain={chain} onRefresh={onRefresh} />
+            <ChainPromoteForm nodes={ketenNodes} onRefresh={onRefresh} />
           </div>
         </div>
 

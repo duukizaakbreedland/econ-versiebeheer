@@ -22,6 +22,7 @@ function LogEntry({ log, onChanged, onError }) {
   const cfg      = ENV_CFG[env] ?? ENV_CFG.TST
   const deployed = log.deployment_log_versions?.filter(v => v.role === 'DEPLOYED') ?? []
   const replaced = log.deployment_log_versions?.filter(v => v.role === 'REPLACED') ?? []
+  const aanroepen = log.deployment_log_dependencies ?? []
 
   async function run(fn) {
     setBusy(true)
@@ -44,7 +45,9 @@ function LogEntry({ log, onChanged, onError }) {
               onSave={v => run(() => updateDeploymentLog({ id: log.id, ticket: v }))} />
           </span>
           <span className="ml-auto text-ink-3 text-xs flex-shrink-0">
-            {deployed.length} model{deployed.length !== 1 ? 'len' : ''}
+            {deployed.length > 0 || aanroepen.length === 0
+              ? `${deployed.length} model${deployed.length !== 1 ? 'len' : ''}`
+              : `${aanroepen.length} aanroep${aanroepen.length !== 1 ? 'en' : ''}`}
           </span>
           <button onClick={() => setOpen(o => !o)}
             className="text-ink-3 hover:text-ink-2 transition-colors shrink-0"
@@ -84,6 +87,27 @@ function LogEntry({ log, onChanged, onError }) {
 
       {open && (
         <div className="border-t border-line px-4 py-3 space-y-3">
+          {/* Welke ouder roept nu welke versie aan — dat is wat de graph toont */}
+          {aanroepen.length > 0 && (
+            <div>
+              <div className="text-meta text-xs font-medium uppercase tracking-wide mb-1.5">
+                Aanroepen omgezet ({aanroepen.length})
+              </div>
+              <div className="space-y-1">
+                {aanroepen.map((k, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs flex-wrap">
+                    <span className="text-ink-2">{k.parent?.models?.name}</span>
+                    <span className="font-mono text-ink-3">{k.parent?.version}</span>
+                    <span className="text-ink-3">→</span>
+                    <span className="text-ink">{k.child?.name}</span>
+                    {k.oud && <span className="font-mono text-ink-3 line-through">{k.oud.version}</span>}
+                    <span className="font-mono text-ink">{k.nieuw?.version}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <div className="text-meta text-xs font-medium uppercase tracking-wide mb-1.5">Notitie</div>
             <div className="text-xs">

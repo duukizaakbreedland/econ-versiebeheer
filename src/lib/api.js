@@ -128,6 +128,12 @@ export async function fetchReleases(orgSlug = 'buva') {
       deployment_log_versions (
         role,
         model_versions ( version, models ( name, type ) )
+      ),
+      deployment_log_dependencies (
+        parent: parent_version_id ( version, models ( name ) ),
+        child:  child_model_id ( name ),
+        oud:    old_child_version_id ( version ),
+        nieuw:  new_child_version_id ( version )
       )
     `)
     .in('environment_id', envs.map(e => e.id))
@@ -194,22 +200,34 @@ export async function fetchPromotiesVoorModel(modelId) {
     .in('model_version_id', mvs.map(m => m.id))
   throwIf(error)
 
+  // Releases die alleen een aanroep van dit model omzetten, horen er ook bij
+  const { data: aanroepen, error: aanErr } = await supabase
+    .from('deployment_log_dependencies')
+    .select(`old_child_version_id, new_child_version_id,
+             deployment_logs ( id, deployed_at, ticket, environments ( name ) )`)
+    .eq('child_model_id', modelId)
+  throwIf(aanErr)
+
   const perLog = {}
+  const logVan = log => perLog[log.id] ??= {
+    logId: log.id,
+    env: log.environments?.name,
+    wanneer: log.deployed_at,
+    ticket: log.ticket,
+    naar: null,
+    van: null,
+  }
   for (const r of regels ?? []) {
-    const log = r.deployment_logs
-    if (!log) continue
-    if (!perLog[log.id]) {
-      perLog[log.id] = {
-        logId: log.id,
-        env: log.environments?.name,
-        wanneer: log.deployed_at,
-        ticket: log.ticket,
-        naar: null,
-        van: null,
-      }
-    }
-    if (r.role === 'DEPLOYED') perLog[log.id].naar = versiePerId[r.model_version_id]
-    else                       perLog[log.id].van  = versiePerId[r.model_version_id]
+    if (!r.deployment_logs) continue
+    const p = logVan(r.deployment_logs)
+    if (r.role === 'DEPLOYED') p.naar = versiePerId[r.model_version_id]
+    else                       p.van  = versiePerId[r.model_version_id]
+  }
+  for (const r of aanroepen ?? []) {
+    if (!r.deployment_logs) continue
+    const p = logVan(r.deployment_logs)
+    p.naar ??= versiePerId[r.new_child_version_id]
+    p.van  ??= versiePerId[r.old_child_version_id] ?? null
   }
 
   const alles = Object.values(perLog)
@@ -315,100 +333,177 @@ export async function registerVersion({ modelName, envName, version, consultant,
   }
 }
 
-// ─── Enkel model promoveren ───────────────────────────────────────────────────
-export async function promoteModel({ modelId, fromEnv, toEnv, orgSlug = 'buva' }) {
-  const orgId = await getOrgId(orgSlug)
+// ─── Promoveren ───────────────────────────────────────────────────────────────
+// Een promotie zet in de doelomgeving twee dingen: welke versie er actief is, en
+// welke versie de ouders aanroepen. Dat laatste is wat de graph toont; zonder
+// dat zie je een gepromoveerd submodel in de doelomgeving niet terug. Beide
+// werken op de keten zoals de graph hem toont, niet op het model als geheel:
+// hetzelfde model kan in één keten onder verschillende ouders op verschillende
+// versies hangen.
 
-  const { data: toEnvRow } = await supabase
-    .from('environments').select('id')
-    .eq('organization_id', orgId).eq('name', toEnv).single()
+const DEP_SLEUTEL = 'environment_id,parent_version_id,interface_version_id,child_model_id'
 
-  const { data: versions } = await supabase
-    .rpc('get_current_versions', { p_org_id: orgId })
+// Versie-id's van een set modellen, opzoekbaar op "modelId|versie"
+async function versieIds(modelIds) {
+  const { data, error } = await supabase
+    .from('model_versions').select('id, model_id, version')
+    .in('model_id', [...new Set(modelIds)])
+  throwIf(error)
+  return Object.fromEntries((data ?? []).map(r => [`${r.model_id}|${r.version}`, r.id]))
+}
 
-  const fromVer = versions.find(v => v.model_id === modelId && v.env_name === fromEnv)
-  const toVer   = versions.find(v => v.model_id === modelId && v.env_name === toEnv)
+// Eén release: versies activeren, koppelingen omzetten en vastleggen wat er
+// stond, zodat rollbackDeployment beide kan terugdraaien.
+// versies:     [{ naar, van }]  model_version-id's; van mag ontbreken
+// koppelingen: [{ parent_version_id, interface_version_id, child_model_id,
+//                 child_version_id, child_missing_in_export }]
+async function legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen }) {
+  // Wat stond er in de doelomgeving? Alleen echt gewijzigde koppelingen gaan om.
+  const sleutel = k => `${k.parent_version_id}|${k.interface_version_id}|${k.child_model_id}`
+  let oud = {}
+  if (koppelingen.length) {
+    const { data: bestaand, error } = await supabase
+      .from('dependencies')
+      .select('parent_version_id, interface_version_id, child_model_id, child_version_id, child_missing_in_export')
+      .eq('environment_id', toEnvId)
+      .in('parent_version_id', [...new Set(koppelingen.map(k => k.parent_version_id))])
+    throwIf(error)
+    oud = Object.fromEntries((bestaand ?? []).map(r => [sleutel(r), r]))
+  }
+  const uniek = Object.values(Object.fromEntries(koppelingen.map(k => [sleutel(k), k])))
+  const gewijzigd = uniek.filter(k => oud[sleutel(k)]?.child_version_id !== k.child_version_id)
 
-  if (!fromVer) throw new Error(`Geen versie gevonden in ${fromEnv}`)
+  const naarIds = [...new Set(versies.map(v => v.naar))]
+  if (naarIds.length === 0 && gewijzigd.length === 0) {
+    throw new Error(`Alles staat al gelijk in ${toEnv}`)
+  }
+
+  const { data: log, error: logErr } = await supabase
+    .from('deployment_logs')
+    .insert({ environment_id: toEnvId, ticket: ticket || null })
+    .select('id').single()
+  throwIf(logErr)
+
+  const entries = []
+  for (const naar of naarIds) {
+    const van = versies.find(v => v.naar === naar)?.van
+    entries.push({ deployment_log_id: log.id, model_version_id: naar, role: 'DEPLOYED' })
+    if (van && van !== naar) entries.push({ deployment_log_id: log.id, model_version_id: van, role: 'REPLACED' })
+  }
+  if (entries.length) throwIf((await supabase.from('deployment_log_versions').insert(entries)).error)
+
+  for (const mvId of naarIds) {
+    await activateVersion(toEnvId, mvId)
+    await bumpWorkItemStatus(mvId, toEnv)
+  }
+
+  if (gewijzigd.length === 0) return
+
+  throwIf((await supabase.from('dependencies').upsert(
+    gewijzigd.map(k => ({
+      environment_id:          toEnvId,
+      parent_version_id:       k.parent_version_id,
+      interface_version_id:    k.interface_version_id,
+      child_model_id:          k.child_model_id,
+      child_version_id:        k.child_version_id,
+      child_missing_in_export: k.child_missing_in_export ?? false,
+    })),
+    { onConflict: DEP_SLEUTEL }
+  )).error)
+
+  throwIf((await supabase.from('deployment_log_dependencies').insert(
+    gewijzigd.map(k => ({
+      deployment_log_id:    log.id,
+      parent_version_id:    k.parent_version_id,
+      interface_version_id: k.interface_version_id,
+      child_model_id:       k.child_model_id,
+      old_child_version_id: oud[sleutel(k)]?.child_version_id ?? null,
+      old_child_missing:    oud[sleutel(k)]?.child_missing_in_export ?? false,
+      new_child_version_id: k.child_version_id,
+    }))
+  )).error)
+}
+
+// ─── Eén node promoveren ──────────────────────────────────────────────────────
+// version is de versie die de node in fromEnv heeft, vervangt die in toEnv.
+// aanroepers zijn zijn ouders in de graph met hun versies per omgeving
+// ([{ modelId, versions }]): in toEnv gaan zij deze versie aanroepen. Wat de
+// versie zelf aanroept, komt mee uit fromEnv.
+export async function promoteModel({ modelId, version, vervangt, fromEnv, toEnv, aanroepers = [], orgSlug = 'buva' }) {
+  const [fromEnvId, toEnvId] = await Promise.all([getEnvId(fromEnv, orgSlug), getEnvId(toEnv, orgSlug)])
+  const ids  = await versieIds([modelId, ...aanroepers.map(a => a.modelId)])
+  const naar = ids[`${modelId}|${version}`]
+  if (!naar) throw new Error(`Versie ${version} niet gevonden`)
+
+  const kolommen = 'parent_version_id, interface_version_id, child_model_id, child_version_id, child_missing_in_export'
+  const [{ data: bron, error: e1 }, { data: doel, error: e2 }] = await Promise.all([
+    supabase.from('dependencies').select(kolommen).eq('environment_id', fromEnvId)
+      .or(`parent_version_id.eq.${naar},child_model_id.eq.${modelId}`),
+    supabase.from('dependencies').select(kolommen).eq('environment_id', toEnvId)
+      .eq('child_model_id', modelId),
+  ])
+  throwIf(e1); throwIf(e2)
+
+  // Wat de gepromoveerde versie zelf aanroept
+  const koppelingen = (bron ?? []).filter(r => r.parent_version_id === naar)
+
+  // De ouders laten deze versie aanroepen, op hun versie in de doelomgeving. Het
+  // interface komt van de bestaande koppeling daar, anders van die in de bron.
+  for (const a of aanroepers) {
+    const ouderNaar = ids[`${a.modelId}|${a.versions?.[toEnv]}`]
+    if (!ouderNaar) continue                       // ouder draait daar (nog) niet
+    const ouderVan = ids[`${a.modelId}|${a.versions?.[fromEnv]}`]
+    const voorbeeld = (doel ?? []).find(r => r.parent_version_id === ouderNaar)
+      ?? (bron ?? []).find(r => r.parent_version_id === ouderVan && r.child_model_id === modelId)
+    if (!voorbeeld) continue
+    koppelingen.push({
+      parent_version_id:    ouderNaar,
+      interface_version_id: voorbeeld.interface_version_id,
+      child_model_id:       modelId,
+      child_version_id:     naar,
+    })
+  }
 
   // Het ticket is al vastgelegd bij het werk dat aan deze versie hangt — daar
   // halen we het op, in plaats van het bij elke promotie opnieuw te vragen.
   const { data: wi } = await supabase
     .from('work_items').select('ticket')
-    .eq('model_version_id', fromVer.model_version_id)
+    .eq('model_version_id', naar)
     .not('ticket', 'is', null)
     .limit(1)
-  const ticket = wi?.[0]?.ticket ?? null
 
-  const { data: log, error: logErr } = await supabase
-    .from('deployment_logs')
-    .insert({ environment_id: toEnvRow.id, ticket })
-    .select('id').single()
-  throwIf(logErr)
-
-  await activateVersion(toEnvRow.id, fromVer.model_version_id)
-
-  const entries = [{ deployment_log_id: log.id, model_version_id: fromVer.model_version_id, role: 'DEPLOYED' }]
-  if (toVer) entries.push({ deployment_log_id: log.id, model_version_id: toVer.model_version_id, role: 'REPLACED' })
-  throwIf((await supabase.from('deployment_log_versions').insert(entries)).error)
-
-  await bumpWorkItemStatus(fromVer.model_version_id, toEnv)
-
-  const fromEnvId = await getEnvId(fromEnv, orgSlug)
-  await copyDependencies({ fromEnvId, toEnvId: toEnvRow.id, modelIds: [modelId] })
+  await legPromotieVast({
+    toEnvId, toEnv, ticket: wi?.[0]?.ticket ?? null,
+    versies: [{ naar, van: vervangt ? ids[`${modelId}|${vervangt}`] : null }],
+    koppelingen,
+  })
 }
 
 // ─── Hele keten promoveren ────────────────────────────────────────────────────
-export async function promoteChain({ chainKey, fromEnv, toEnv, ticket, orgSlug = 'buva' }) {
-  const orgId = await getOrgId(orgSlug)
+// nodes zijn de nodes uit de graph ([{ modelId, versions }]). Daarna loopt de
+// keten in toEnv precies zoals in fromEnv: elke node die verschilt wordt
+// gepromoveerd, en elke koppeling langs de keten gaat mee.
+export async function promoteChain({ nodes, fromEnv, toEnv, ticket, orgSlug = 'buva' }) {
+  const [fromEnvId, toEnvId] = await Promise.all([getEnvId(fromEnv, orgSlug), getEnvId(toEnv, orgSlug)])
+  const ids = await versieIds(nodes.map(n => n.modelId))
+  const id  = (n, env) => ids[`${n.modelId}|${n.versions?.[env]}`]
 
-  const { data: toEnvRow } = await supabase
-    .from('environments').select('id')
-    .eq('organization_id', orgId).eq('name', toEnv).single()
+  const versies = nodes
+    .filter(n => n.versions?.[fromEnv] && n.versions[fromEnv] !== n.versions?.[toEnv] && id(n, fromEnv))
+    .map(n => ({ naar: id(n, fromEnv), van: id(n, toEnv) }))
 
-  const { data: versions } = await supabase
-    .rpc('get_current_versions', { p_org_id: orgId })
+  // De koppelingen zoals de keten in fromEnv loopt
+  const ouders  = [...new Set(nodes.map(n => id(n, fromEnv)).filter(Boolean))]
+  const inKeten = new Set(nodes.map(n => n.modelId))
+  const { data: rijen, error } = await supabase
+    .from('dependencies')
+    .select('parent_version_id, interface_version_id, child_model_id, child_version_id, child_missing_in_export')
+    .eq('environment_id', fromEnvId)
+    .in('parent_version_id', ouders)
+  throwIf(error)
+  const koppelingen = (rijen ?? []).filter(r => inKeten.has(r.child_model_id))
 
-  const { data: chainData } = await supabase
-    .from('chains')
-    .select('chain_nodes(model_id)')
-    .eq('organization_id', orgId)
-    .eq('key', chainKey)
-    .single()
-
-  const chainModelIds = new Set(chainData.chain_nodes.map(n => n.model_id))
-  const fromVersions  = versions.filter(v => v.env_name === fromEnv && chainModelIds.has(v.model_id))
-  const toVersions    = versions.filter(v => v.env_name === toEnv   && chainModelIds.has(v.model_id))
-
-  if (fromVersions.length === 0) throw new Error(`Geen versies gevonden in ${fromEnv}`)
-
-  const toPromote = fromVersions.filter(v => {
-    const current = toVersions.find(tv => tv.model_id === v.model_id)
-    return !current || current.version !== v.version
-  })
-
-  if (toPromote.length === 0) throw new Error(`Alle versies zijn al gelijk in ${toEnv}`)
-
-  const { data: log, error: logErr } = await supabase
-    .from('deployment_logs')
-    .insert({ environment_id: toEnvRow.id, ticket: ticket || null })
-    .select('id').single()
-  throwIf(logErr)
-
-  for (const v of toPromote) {
-    const replaced = toVersions.find(tv => tv.model_id === v.model_id)
-
-    await activateVersion(toEnvRow.id, v.model_version_id)
-
-    const entries = [{ deployment_log_id: log.id, model_version_id: v.model_version_id, role: 'DEPLOYED' }]
-    if (replaced) entries.push({ deployment_log_id: log.id, model_version_id: replaced.model_version_id, role: 'REPLACED' })
-    throwIf((await supabase.from('deployment_log_versions').insert(entries)).error)
-
-    await bumpWorkItemStatus(v.model_version_id, toEnv)
-  }
-
-  const fromEnvId = await getEnvId(fromEnv, orgSlug)
-  await copyDependencies({ fromEnvId, toEnvId: toEnvRow.id, modelIds: [...chainModelIds] })
+  await legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen })
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -554,32 +649,6 @@ export async function fetchDependencies(orgSlug = 'buva') {
     childVersionId: d.child?.id,
     ontbreekt:     d.child_missing_in_export,
   }))
-}
-
-// Momentopname meenemen bij een promotie: de koppelingen zoals ze in de
-// bronomgeving gelden, gelden daarna ook in de doelomgeving.
-async function copyDependencies({ fromEnvId, toEnvId, modelIds }) {
-  const set = new Set(modelIds)
-
-  const { data: rows } = await supabase
-    .from('dependencies')
-    .select('parent_version_id, interface_version_id, child_version_id, child_model_id, parent: parent_version_id ( model_id )')
-    .eq('environment_id', fromEnvId)
-
-  const relevant = (rows || []).filter(r => set.has(r.child_model_id) || set.has(r.parent?.model_id))
-  if (relevant.length === 0) return
-
-  const { error } = await supabase.from('dependencies').upsert(
-    relevant.map(r => ({
-      environment_id:       toEnvId,
-      parent_version_id:    r.parent_version_id,
-      interface_version_id: r.interface_version_id,
-      child_version_id:     r.child_version_id,
-      child_model_id:       r.child_model_id,
-    })),
-    { onConflict: 'environment_id,parent_version_id,interface_version_id,child_model_id' }
-  )
-  throwIf(error)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -732,7 +801,7 @@ export async function removeChainEdge(edgeId) {
 
 // ─── Promotie terugdraaien ────────────────────────────────────────────────────
 // Zet de vervangen versies weer actief, haalt de gepromoveerde versies uit de
-// omgeving en verwijdert de release-regel.
+// omgeving, zet de omgezette aanroepen terug en verwijdert de release-regel.
 export async function rollbackDeployment({ logId }) {
   const { data: log, error: logErr } = await supabase
     .from('deployment_logs')
@@ -745,32 +814,45 @@ export async function rollbackDeployment({ logId }) {
   const deployed = entries.filter(e => e.role === 'DEPLOYED').map(e => e.model_version_id)
   const replaced = entries.filter(e => e.role === 'REPLACED').map(e => e.model_version_id)
 
-  if (deployed.length === 0) throw new Error('Deze release bevat geen versies om terug te draaien')
+  const { data: koppelingen, error: kopErr } = await supabase
+    .from('deployment_log_dependencies')
+    .select('parent_version_id, interface_version_id, child_model_id, old_child_version_id, old_child_missing')
+    .eq('deployment_log_id', logId)
+  throwIf(kopErr)
+
+  if (deployed.length === 0 && !koppelingen?.length) {
+    throw new Error('Deze release bevat niets om terug te draaien')
+  }
 
   // Welke modellen raakt deze release?
   const { data: mvRows } = await supabase
     .from('model_versions')
     .select('id, model_id')
     .in('id', [...deployed, ...replaced])
-  const touchedModels = new Set((mvRows || []).map(r => r.model_id))
+  const touchedModels = new Set([
+    ...(mvRows || []).map(r => r.model_id),
+    ...(koppelingen ?? []).map(k => k.child_model_id),
+  ])
 
   // Blokkeer als er voor dezelfde omgeving een nieuwere release over dezelfde
   // modellen heen is gegaan — anders draai je een tussenliggende stap terug.
   const { data: newer } = await supabase
     .from('deployment_logs')
-    .select('id, deployed_at, deployment_log_versions ( model_version_id )')
+    .select('id, deployed_at, deployment_log_versions ( model_version_id ), deployment_log_dependencies ( child_model_id )')
     .eq('environment_id', log.environment_id)
     .gt('deployed_at', log.deployed_at)
 
   if (newer?.length) {
     const newerMvIds = newer.flatMap(l => l.deployment_log_versions.map(v => v.model_version_id))
-    if (newerMvIds.length) {
-      const { data: newerMv } = await supabase
-        .from('model_versions').select('model_id').in('id', newerMvIds)
-      const overlap = (newerMv || []).some(r => touchedModels.has(r.model_id))
-      if (overlap) {
-        throw new Error('Er is hierna een nieuwere release over dezelfde modellen gegaan. Draai die eerst terug.')
-      }
+    const { data: newerMv } = newerMvIds.length
+      ? await supabase.from('model_versions').select('model_id').in('id', newerMvIds)
+      : { data: [] }
+    const newerModels = [
+      ...(newerMv || []).map(r => r.model_id),
+      ...newer.flatMap(l => (l.deployment_log_dependencies ?? []).map(k => k.child_model_id)),
+    ]
+    if (newerModels.some(m => touchedModels.has(m))) {
+      throw new Error('Er is hierna een nieuwere release over dezelfde modellen gegaan. Draai die eerst terug.')
     }
   }
 
@@ -785,6 +867,22 @@ export async function rollbackDeployment({ logId }) {
   // Vervangen versies weer activeren
   for (const mvId of replaced) {
     await activateVersion(log.environment_id, mvId)
+  }
+
+  // Aanroepen terugzetten zoals ze vóór de promotie stonden; een koppeling die
+  // de promotie zelf had aangelegd, gaat weer weg
+  for (const k of koppelingen ?? []) {
+    const waar = q => q
+      .eq('environment_id', log.environment_id)
+      .eq('parent_version_id', k.parent_version_id)
+      .eq('interface_version_id', k.interface_version_id)
+      .eq('child_model_id', k.child_model_id)
+    const { error } = k.old_child_version_id
+      ? await waar(supabase.from('dependencies').update({
+          child_version_id: k.old_child_version_id, child_missing_in_export: k.old_child_missing,
+        }))
+      : await waar(supabase.from('dependencies').delete())
+    throwIf(error)
   }
 
   // Werk items terugzetten naar de status van vóór de promotie

@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { promoteChain } from '../lib/api.js'
 
-export default function ChainPromoteForm({ chainKey, chain, onRefresh }) {
-  const models    = chain.nodes.filter(n => n.type === 'model')
+// nodes zijn de nodes uit de graph: een model dat in de keten op meerdere
+// versies hangt, telt per versie mee.
+export default function ChainPromoteForm({ nodes, onRefresh }) {
+  const models    = nodes.filter(n => n.type === 'model')
   const canToAcc  = models.some(n => n.versions.TST && n.versions.ACC  !== n.versions.TST)
   const canToProd = models.some(n => n.versions.ACC && n.versions.PROD !== n.versions.ACC)
 
@@ -24,7 +26,7 @@ export default function ChainPromoteForm({ chainKey, chain, onRefresh }) {
   async function handlePromote() {
     setSaving(true); setMsg(null)
     try {
-      await promoteChain({ chainKey, fromEnv, toEnv: target, ticket: ticket.trim() })
+      await promoteChain({ nodes, fromEnv, toEnv: target, ticket: ticket.trim() })
       setMsg({ ok: true, text: `${diffCount} modellen gepromoveerd naar ${target}` })
       setTicket(''); setOpen(false)
       await onRefresh()

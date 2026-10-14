@@ -73,7 +73,9 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
     const fromVer = target === 'ACC' ? versions.TST : versions.ACC
     setSaving(true); setMsg(null)
     try {
-      await promoteModel({ modelId, fromEnv, toEnv: target })
+      await promoteModel({
+        modelId, version: fromVer, vervangt: versions[target], fromEnv, toEnv: target, aanroepers,
+      })
       setMsg({ ok: true, text: `${fromVer} gepromoveerd naar ${target}` })
       setOpenKaart(null)
       await onRefresh()
@@ -83,6 +85,8 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
   }
 
   const fromVer = target === 'ACC' ? versions.TST : versions.ACC
+  // Wie roept deze node in de doelomgeving aan? Die aanroep gaat om naar fromVer.
+  const doelAanroepers = aanroepers.filter(a => a.versions[target])
 
   return (
     <Section title="Acties">
@@ -153,6 +157,24 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
               <span className="font-mono text-ink">{fromVer}</span> gaat naar {target}
               <span className="text-ink-3"> — het ticket komt mee uit het werk bij deze versie</span>
             </div>
+            {doelAanroepers.length > 0 && (
+              <div className="text-meta text-xs">
+                Daarna roept{' '}
+                {doelAanroepers.map((a, i) => (
+                  <span key={i}>
+                    {i > 0 && ', '}
+                    <span className="text-ink">{a.label}</span> <span className="font-mono text-ink">{a.versions[target]}</span>
+                  </span>
+                ))}
+                {' '}in {target} <span className="font-mono text-ink">{fromVer}</span> aan
+              </div>
+            )}
+            {aanroepers.length > 0 && doelAanroepers.length === 0 && (
+              <div className="text-xs text-mid bg-mid-bg border border-mid-bg-2 rounded-lg px-2.5 py-2">
+                De ouder van deze node draait nog niet in {target}. De versie wordt daar wel
+                actief, maar verschijnt pas in deze keten als je de ouder ook promoveert.
+              </div>
+            )}
             <div className="flex gap-2 pt-0.5">
               <Button variant="green" className="flex-1" onClick={handlePromote} disabled={saving}>
                 {saving ? 'Bezig…' : `Naar ${target}`}
