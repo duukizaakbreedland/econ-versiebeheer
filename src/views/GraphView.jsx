@@ -9,8 +9,30 @@ import InterfaceNode from '../components/graph/InterfaceNode.jsx'
 import DetailPanel from '../components/DetailPanel.jsx'
 import ChainPromoteForm from '../components/ChainPromoteForm.jsx'
 import KetenMenu from '../components/graph/KetenMenu.jsx'
+import ErrorBoundary from '../components/ErrorBoundary.jsx'
+import { Banner } from '../components/ui/index.jsx'
 
 const NODE_TYPES = { model: ModelNode, interface: InterfaceNode }
+
+// Wat er op de plek van het detailpaneel komt als dat crasht
+function PaneelFout({ label, fout, onClose }) {
+  return (
+    <aside className="bg-card border-l border-line flex flex-col shrink-0" style={{ width: 440 }}>
+      <header className="px-4 pt-3 pb-3 border-b border-line flex items-start gap-2">
+        <div className="flex-1 min-w-0 text-ink font-bold text-sm break-words">{label}</div>
+        <button onClick={onClose}
+          className="text-ink-3 hover:text-ink text-xl leading-none transition-colors shrink-0">
+          ×
+        </button>
+      </header>
+      <div className="px-4 py-3">
+        <Banner ok={false}>
+          Het detailpaneel kon niet worden getoond: {fout?.message ?? 'onbekende fout'}
+        </Banner>
+      </div>
+    </aside>
+  )
+}
 
 // ─── Hoofd component ──────────────────────────────────────────────────────────
 export default function GraphView({ initialChain, chains, onRefresh }) {
@@ -144,18 +166,24 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
       {/* Detail paneel — volledige hoogte.
           De key dwingt een remount bij het wisselen van node: zonder dat blijven
           meldingen, half ingevulde formulieren en de gekozen promotierichting van
-          het vorige model gewoon staan. */}
+          het vorige model gewoon staan. De boundary eromheen houdt een fout in het
+          paneel binnen het paneel; door de key begint hij per node opnieuw. */}
       {selectedNode && (
-        <DetailPanel
+        <ErrorBoundary
           key={selectedNode.id}
-          node={selectedNode}
-          chain={chain}
-          chainKey={chainKey}
-          chains={chains}
-          deps={deps}
-          onClose={() => setSelected(null)}
-          onRefresh={onRefresh}
-        />
+          fallback={fout => (
+            <PaneelFout label={selectedNode.data.label} fout={fout} onClose={() => setSelected(null)} />
+          )}>
+          <DetailPanel
+            node={selectedNode}
+            chain={chain}
+            chainKey={chainKey}
+            chains={chains}
+            deps={deps}
+            onClose={() => setSelected(null)}
+            onRefresh={onRefresh}
+          />
+        </ErrorBoundary>
       )}
     </div>
   )

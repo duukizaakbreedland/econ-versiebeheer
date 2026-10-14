@@ -339,7 +339,7 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
         {rijen.slice(0, 5).map(p => (
           <div key={p.logId}
             className="flex items-center gap-2 bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5">
-            <span className="text-xs font-bold shrink-0" style={{ color: ENV_COLOR[p.env] }}>{p.env}</span>
+            <span className="text-xs font-bold shrink-0" style={{ color: ENV[p.env]?.ink }}>{p.env}</span>
             {p.van && <span className="font-mono text-ink-3 text-xs line-through">{p.van}</span>}
             <span className="text-ink-3 text-xs">→</span>
             <span className="font-mono text-ink text-xs">{p.naar}</span>
@@ -410,7 +410,7 @@ function VersieRegel({ mv, onChanged, onError }) {
         <div className="flex gap-1">
           {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
             <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
-              style={{ background: ENV_COLOR[e] + '20', color: ENV_COLOR[e] }}>
+              style={{ background: ENV[e].bg, color: ENV[e].ink }}>
               {e}
             </span>
           ))}
