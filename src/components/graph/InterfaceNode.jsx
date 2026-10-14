@@ -19,7 +19,7 @@ export default function InterfaceNode({ data }) {
         {data.label}
       </div>
       <div style={{ color: 'var(--meta-ink)', fontSize: 9, fontFamily: 'var(--mono)', marginTop: 1 }}>
-        {data.versions.PROD ?? '—'}
+        {data.versions.PROD ?? data.versions.ACC ?? data.versions.TST ?? '—'}
       </div>
     </div>
   )

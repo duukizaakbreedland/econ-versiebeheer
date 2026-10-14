@@ -1,6 +1,5 @@
 import dagre from 'dagre'
 import { MarkerType, Position } from 'reactflow'
-import { ENVS } from '../../lib/chainUtils.js'
 
 // ─── Node dimensies ───────────────────────────────────────────────────────────
 export const MODEL_W  = 230
@@ -22,27 +21,15 @@ function extraRegels({ workItem, sharedIn, ontbreekt }) {
 }
 
 // ─── Dagre layout ─────────────────────────────────────────────────────────────
-// extra = { ketenVersies }  — per omgeving de versies zoals ze in déze keten
-// worden aangeroepen, plus welke daarvan niet in de export voorkwamen.
-export function applyLayout(rawNodes, rawEdges, chainKey, shared, extra = {}) {
-  const { ketenVersies = {} } = extra
-
-  const dataVan = n => {
-    // De versie zoals de ouder hem in deze keten aanroept; heeft hij geen ouder
-    // (het hoofdmodel), dan zijn eigen versie uit de omgeving.
-    const versions = {}
-    const ontbreekt = []
-    for (const env of ENVS) {
-      const k = ketenVersies[env]
-      versions[env] = k?.versies?.[n.id] ?? n.versions?.[env]
-      if (k?.ontbreekt?.[n.id]) ontbreekt.push(env)
-    }
-    return {
-      label: n.label, versions, versionIds: n.versionIds,
-      workItem: n.workItem, modelId: n.modelId, ontbreekt,
-      sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
-    }
-  }
+// rawNodes komt uit ketenGraaf(): per node al de versies zoals ze in déze keten
+// worden aangeroepen, plus de omgevingen waar de export die versie miste.
+export function applyLayout(rawNodes, rawEdges, chainKey, shared) {
+  const dataVan = n => ({
+    label: n.label, versions: n.versions ?? {}, notes: n.notes,
+    workItem: n.workItem, modelId: n.modelId, nodeKey: n.nodeKey ?? n.id,
+    ontbreekt: n.ontbreekt ?? [],
+    sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
+  })
 
   const hoogteVan = n =>
     n.type === 'interface' ? IFACE_H : modelHeight(extraRegels(dataVan(n)))

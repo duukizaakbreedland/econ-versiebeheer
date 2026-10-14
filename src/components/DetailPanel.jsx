@@ -215,17 +215,20 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
   const [env, setEnv] = useState('PROD')
 
   const d        = node.data
-  const kinderen = deps.filter(x => x.env === env && x.parentModelId === d.modelId)
-  const ouders   = deps.filter(x => x.env === env && x.childModelId  === d.modelId)
+  // Alleen de koppelingen van de versie die deze node in de keten heeft: een
+  // model kan in dezelfde keten op meerdere versies hangen
+  const versie   = d.versions[env]
+  const kinderen = deps.filter(x => x.env === env && x.parentModelId === d.modelId && x.parentVersion === versie)
+  const ouders   = deps.filter(x => x.env === env && x.childModelId  === d.modelId && x.childVersion  === versie)
   const isShared = d.sharedIn?.length > 0
 
   // Terugval op de vaste ketenstructuur zolang er niets is vastgelegd
   const structParents = chain.edges
-    .filter(e => e.target === node.id)
+    .filter(e => e.target === d.nodeKey)
     .map(e => chain.nodes.find(n => n.id === e.source))
     .filter(Boolean)
   const structChildren = chain.edges
-    .filter(e => e.source === node.id)
+    .filter(e => e.source === d.nodeKey)
     .map(e => chain.nodes.find(n => n.id === e.target))
     .filter(Boolean)
 

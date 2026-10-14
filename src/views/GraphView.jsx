@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { getSharedModels, ketenVersies } from '../lib/chainUtils.js'
+import { getSharedModels, ketenGraaf } from '../lib/chainUtils.js'
 import { useDependencies } from '../hooks/useDependencies.js'
 import { applyLayout } from '../components/graph/layout.js'
 import ModelNode from '../components/graph/ModelNode.jsx'
@@ -62,17 +62,15 @@ export default function GraphView({ initialChain, chains, onRefresh }) {
 
   const chain = chains?.[chainKey]
 
-  // Per omgeving de versies zoals ze in déze keten worden aangeroepen
-  const versiesPerEnv = useMemo(
-    () => chain ? ketenVersies(chain, deps) : {},
-    [chain, deps]
-  )
+  // De keten zoals hij werkelijk wordt aangeroepen: een model dat binnen de
+  // keten op verschillende versies hangt, krijgt per versie een eigen node
+  const graaf = useMemo(() => chain ? ketenGraaf(chain, deps) : null, [chain, deps])
 
   const { nodes: initNodes, edges: initEdges, translateExtent } = useMemo(
-    () => chain
-      ? applyLayout(chain.nodes, chain.edges, chainKey, shared, { ketenVersies: versiesPerEnv })
+    () => graaf
+      ? applyLayout(graaf.nodes, graaf.edges, chainKey, shared)
       : { nodes: [], edges: [], translateExtent: [[-400,-400],[1200,900]] },
-    [chain, chainKey, shared, versiesPerEnv]
+    [graaf, chainKey, shared]
   )
 
   async function handleRefresh() {
@@ -120,7 +118,12 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
   useEffect(() => { setNodes(initNodes) }, [initNodes, setNodes])
 
   const onNodeClick = useCallback((_, node) => setSelected(node), [])
-  const selectedNode = selected ? nodes.find(n => n.id === selected.id) : null
+  // Na een promotie kan een variant andere versies (en dus een andere id) krijgen;
+  // val dan terug op hetzelfde model, zodat het paneel open blijft
+  const selectedNode = selected
+    ? nodes.find(n => n.id === selected.id)
+      ?? nodes.find(n => n.data.nodeKey === selected.data?.nodeKey)
+    : null
 
   return (
     <div className="flex w-full" style={{ height: 'calc(100vh - 110px)' }}>
