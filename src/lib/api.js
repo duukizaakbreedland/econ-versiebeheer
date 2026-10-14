@@ -255,43 +255,36 @@ async function revertWorkItemStatus(modelVersionIds, envName) {
 // versie in de tool, dan staat hij in eCon al zo aangeroepen; daarom wijzen we
 // de koppelingen meteen mee. Zonder dit blijft de graph de oude versie tonen
 // tot de volgende eCon-import, terwijl het detailpaneel al wel bijgewerkt is.
-async function herkoppelNaarNieuweVersie({ orgId, envId, envName, childModelId, childVersionId, ketenModelIds }) {
-  const { data: rijen } = await supabase
+//
+// aanroepers zijn de ouders van de aangeklikte node in de graph, met de versie
+// waarop ze daar in deze omgeving draaien: [{ modelId, version }]. Alleen die
+// koppelingen gaan om. Een submodel hangt vaak onder meerdere versies van
+// dezelfde ouder (Profielmodel 23.11.23 en 25.03.06 roepen elk een eigen
+// SubKaderModel aan); welke ouderversie "actief" is in de omgeving zegt dus
+// niets over welke koppeling je bedoelt.
+async function herkoppelAanroepers({ envId, childModelId, childVersionId, aanroepers }) {
+  if (!aanroepers?.length) return    // hoofdmodel: gebruikt zijn eigen versie al
+
+  const { data: rijen, error } = await supabase
     .from('dependencies')
-    .select('id, parent_version_id, parent: parent_version_id ( model_id )')
+    .select('id, parent: parent_version_id ( model_id, version )')
     .eq('environment_id', envId)
     .eq('child_model_id', childModelId)
+  throwIf(error)
 
-  // Hoofdmodellen worden nergens aangeroepen; die gebruiken hun eigen versie al.
-  if (!rijen?.length) return
-
-  // Alleen koppelingen onder een ouderversie die nu draait. Rijen van oude
-  // ouderversies blijven als historie staan en tellen in de graph toch niet mee.
-  const { data: actief } = await supabase.rpc('get_current_versions', { p_org_id: orgId })
-  const actieveVersies = new Set(
-    (actief ?? []).filter(v => v.env_name === envName).map(v => v.model_version_id)
-  )
-
-  // Alleen binnen de keten waarin je staat. Ruim de helft van de modellen hangt
-  // in meerdere ketens, en daar hoort een submodel juist op verschillende
-  // versies te kunnen draaien — een nieuwe versie hier zegt niets over daar.
-  const inKeten = ketenModelIds?.length ? new Set(ketenModelIds) : null
-
-  const teWijzigen = rijen.filter(r =>
-    actieveVersies.has(r.parent_version_id) &&
-    (!inKeten || inKeten.has(r.parent?.model_id))
-  )
+  const sleutels = new Set(aanroepers.map(a => `${a.modelId}|${a.version}`))
+  const teWijzigen = (rijen ?? []).filter(r => sleutels.has(`${r.parent?.model_id}|${r.parent?.version}`))
   if (teWijzigen.length === 0) return
 
-  const { error } = await supabase
+  // De versie is net geregistreerd, dus hij bestaat: de ontbreekt-vlag vervalt
+  throwIf((await supabase
     .from('dependencies')
-    .update({ child_version_id: childVersionId })
-    .in('id', teWijzigen.map(r => r.id))
-  throwIf(error)
+    .update({ child_version_id: childVersionId, child_missing_in_export: false })
+    .in('id', teWijzigen.map(r => r.id))).error)
 }
 
 // ─── Nieuwe versie registreren ────────────────────────────────────────────────
-export async function registerVersion({ modelName, envName, version, consultant, note, ticket, ketenModelIds, orgSlug = 'buva' }) {
+export async function registerVersion({ modelName, envName, version, consultant, note, ticket, aanroepers, orgSlug = 'buva' }) {
   const orgId = await getOrgId(orgSlug)
 
   const { data: env, error: envErr } = await supabase
@@ -312,9 +305,7 @@ export async function registerVersion({ modelName, envName, version, consultant,
 
   await activateVersion(env.id, mv.id)
 
-  await herkoppelNaarNieuweVersie({
-    orgId, envId: env.id, envName, childModelId: model.id, childVersionId: mv.id, ketenModelIds,
-  })
+  await herkoppelAanroepers({ envId: env.id, childModelId: model.id, childVersionId: mv.id, aanroepers })
 
   if (consultant) {
     const { error } = await supabase

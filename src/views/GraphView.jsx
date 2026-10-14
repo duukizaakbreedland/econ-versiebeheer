@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { getSharedModels, ketenGraaf } from '../lib/chainUtils.js'
+import { getSharedModels, ketenGraaf, ENVS } from '../lib/chainUtils.js'
 import { useDependencies } from '../hooks/useDependencies.js'
 import { applyLayout } from '../components/graph/layout.js'
 import ModelNode from '../components/graph/ModelNode.jsx'
@@ -118,12 +118,30 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
   useEffect(() => { setNodes(initNodes) }, [initNodes, setNodes])
 
   const onNodeClick = useCallback((_, node) => setSelected(node), [])
-  // Na een promotie kan een variant andere versies (en dus een andere id) krijgen;
-  // val dan terug op hetzelfde model, zodat het paneel open blijft
-  const selectedNode = selected
-    ? nodes.find(n => n.id === selected.id)
-      ?? nodes.find(n => n.data.nodeKey === selected.data?.nodeKey)
-    : null
+  // Na een registratie of promotie kan een variant andere versies (en dus een
+  // andere id) krijgen. Val dan terug op de variant van hetzelfde model die in
+  // de meeste omgevingen nog dezelfde versie heeft, zodat het paneel blijft staan.
+  const selectedNode = useMemo(() => {
+    if (!selected) return null
+    const zelfde = nodes.find(n => n.id === selected.id)
+    if (zelfde) return zelfde
+    const oud = selected.data?.versions ?? {}
+    const score = n => ENVS.filter(e => n.data.versions?.[e] === oud[e]).length
+    return nodes
+      .filter(n => n.data.nodeKey === selected.data?.nodeKey)
+      .sort((a, b) => score(b) - score(a))[0] ?? null
+  }, [selected, nodes])
+
+  // Wie roept deze node aan, en op welke versie? Over een interface heen: de
+  // ouder van een submodel is het model vóór de interface.
+  const aanroepers = useMemo(() => {
+    if (!selectedNode) return []
+    const perId = Object.fromEntries(nodes.map(n => [n.id, n]))
+    const bronnen = id => initEdges.filter(e => e.target === id).map(e => perId[e.source]).filter(Boolean)
+    return bronnen(selectedNode.id)
+      .flatMap(n => n.type === 'interface' ? bronnen(n.id) : [n])
+      .map(n => ({ modelId: n.data.modelId, label: n.data.label, versions: n.data.versions }))
+  }, [selectedNode, nodes, initEdges])
 
   return (
     <div className="flex w-full" style={{ height: 'calc(100vh - 110px)' }}>
@@ -169,11 +187,12 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
       {/* Detail paneel — volledige hoogte.
           De key dwingt een remount bij het wisselen van node: zonder dat blijven
           meldingen, half ingevulde formulieren en de gekozen promotierichting van
-          het vorige model gewoon staan. De boundary eromheen houdt een fout in het
-          paneel binnen het paneel; door de key begint hij per node opnieuw. */}
+          het vorige model gewoon staan. De key is de aangeklikte node, niet de
+          variant die we nu tonen: verschuift die na een registratie, dan blijft
+          de melding staan. De boundary houdt een fout binnen het paneel. */}
       {selectedNode && (
         <ErrorBoundary
-          key={selectedNode.id}
+          key={selected.id}
           fallback={fout => (
             <PaneelFout label={selectedNode.data.label} fout={fout} onClose={() => setSelected(null)} />
           )}>
@@ -183,6 +202,7 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
             chainKey={chainKey}
             chains={chains}
             deps={deps}
+            aanroepers={aanroepers}
             onClose={() => setSelected(null)}
             onRefresh={onRefresh}
           />

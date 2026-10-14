@@ -369,13 +369,13 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
 // Werk dat je achteraf vastlegt hoort meestal al af te zijn: staat de versie al
 // in PROD, dan is het klaar; staat hij in ACC, dan ligt hij ter review.
 function statusBijEnvs(envs) {
-  if (envs.some(e => e.name === 'PROD')) return 'DONE'
-  if (envs.some(e => e.name === 'ACC'))  return 'REVIEW'
+  if (envs.includes('PROD')) return 'DONE'
+  if (envs.includes('ACC'))  return 'REVIEW'
   return 'IN_PROGRESS'
 }
 
 // ─── Eén versieregel, met werk toevoegen en terugnemen ────────────────────────
-function VersieRegel({ mv, onChanged, onError }) {
+function VersieRegel({ mv, envs, onChanged, onError }) {
   const voornaam = useVoornaam()
 
   const [busy,   setBusy]   = useState(false)
@@ -383,7 +383,7 @@ function VersieRegel({ mv, onChanged, onError }) {
   const [cons,   setCons]   = useState(voornaam)
   const [note,   setNote]   = useState('')
   const [ticket, setTicket] = useState('')
-  const [status, setStatus] = useState(() => statusBijEnvs(mv.envs))
+  const [status, setStatus] = useState(() => statusBijEnvs(envs))
 
   async function verwijder() {
     setBusy(true)
@@ -411,7 +411,7 @@ function VersieRegel({ mv, onChanged, onError }) {
       <div className="flex items-center gap-2 text-xs">
         <span className="font-mono text-ink">{mv.version}</span>
         <div className="flex gap-1">
-          {ENV_ORDER.filter(e => mv.envs.some(x => x.name === e)).map(e => (
+          {ENV_ORDER.filter(e => envs.includes(e)).map(e => (
             <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
               style={{ background: ENV[e].bg, color: ENV[e].ink }}>
               {e}
@@ -461,7 +461,11 @@ function VersieRegel({ mv, onChanged, onError }) {
 }
 
 // ─── Versies met het werk dat eraan hangt ─────────────────────────────────────
-function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
+// De omgevingslabels gaan over déze node: op welke versie draait hij hier, in
+// deze keten. Hetzelfde model kan elders op een andere versie hangen (SubKaderModel
+// draait onder Profielregels op 26.02.16); die versie hoort hier niet als actief
+// te staan. Hij staat er wel bij onder "Toon alle versies".
+function VersiesSectie({ modelId, versions, refreshKey, onChanged, onError }) {
   const [rows, setRows] = useState(null)
   const [alles, setAlles] = useState(false)
 
@@ -476,8 +480,10 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
   if (!rows) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Laden…</div></Section>
   if (rows.length === 0) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Nog geen versies</div></Section>
 
-  // Versies waar werk aan hangt of die ergens draaien eerst; de rest is ruis
-  const metInhoud = rows.filter(r => r.werk.length > 0 || r.envs.length > 0)
+  const envsVan = mv => ENV_ORDER.filter(e => versions[e] === mv.version)
+
+  // Versies waar werk aan hangt of die hier draaien eerst; de rest is ruis
+  const metInhoud = rows.filter(r => r.werk.length > 0 || envsVan(r).length > 0)
   const zichtbaar = alles ? rows : (metInhoud.length > 0 ? metInhoud : rows.slice(0, 5))
   const werkTotaal = rows.reduce((n, r) => n + r.werk.length, 0)
 
@@ -485,7 +491,7 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
     <Section title={`Versies en werk (${rows.length})`} collapsible defaultOpen>
       <div className="space-y-2">
         {zichtbaar.map(mv => (
-          <VersieRegel key={mv.id} mv={mv} onChanged={onChanged} onError={onError} />
+          <VersieRegel key={mv.id} mv={mv} envs={envsVan(mv)} onChanged={onChanged} onError={onError} />
         ))}
       </div>
 
@@ -512,7 +518,7 @@ function VersiesSectie({ modelId, refreshKey, onChanged, onError }) {
 }
 
 // ─── Hoofdcomponent ───────────────────────────────────────────────────────────
-export default function DetailPanel({ node, chain, chainKey, chains, deps = [], onClose, onRefresh }) {
+export default function DetailPanel({ node, chain, chainKey, chains, deps = [], aanroepers = [], onClose, onRefresh }) {
   const { width, onMouseDown } = useResizableWidth()
   const [err, setErr] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -622,7 +628,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         {/* Versies met het werk dat eraan hangt — wat er is gedaan, vóór wat je kunt doen */}
         {isModel && (
           <VersiesSectie
-            modelId={d.modelId} refreshKey={refreshKey}
+            modelId={d.modelId} versions={d.versions} refreshKey={refreshKey}
             onChanged={handleChanged} onError={setErr}
           />
         )}
@@ -633,7 +639,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
             modelName={d.label}
             modelId={d.modelId}
             versions={d.versions}
-            ketenModelIds={chain.nodes.map(n => n.modelId)}
+            aanroepers={aanroepers}
             onRefresh={handleChanged}
           />
         )}

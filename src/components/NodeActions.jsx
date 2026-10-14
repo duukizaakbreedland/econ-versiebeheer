@@ -29,12 +29,13 @@ function ActieKaart({ titel, subtitel, icon, open, onToggle, children }) {
   )
 }
 
-export default function NodeActions({ modelName, modelId, versions, ketenModelIds, onRefresh }) {
+export default function NodeActions({ modelName, modelId, versions, aanroepers = [], onRefresh }) {
   const canToAcc  = versions.TST && versions.ACC  !== versions.TST
   const canToProd = versions.ACC && versions.PROD !== versions.ACC
   const canPromote = canToAcc || canToProd
 
   const voornaam = useVoornaam()
+  const tstAanroepers = aanroepers.filter(a => a.versions.TST)
 
   const [openKaart, setOpenKaart] = useState(null) // null | 'register' | 'promote'
   const [target,    setTarget]    = useState(() => canToAcc ? 'ACC' : 'PROD')
@@ -56,7 +57,8 @@ export default function NodeActions({ modelName, modelId, versions, ketenModelId
     try {
       await registerVersion({
         modelName, envName: 'TST', version: versie.trim(), consultant: cons.trim(),
-        note: note.trim(), ticket: regTicket.trim(), ketenModelIds,
+        note: note.trim(), ticket: regTicket.trim(),
+        aanroepers: tstAanroepers.map(a => ({ modelId: a.modelId, version: a.versions.TST })),
       })
       setMsg({ ok: true, text: `${versie.trim()} geregistreerd in TST` })
       setVersie(versieVanVandaag()); setCons(voornaam); setNote(''); setRegTicket(''); setOpenKaart(null)
@@ -101,6 +103,18 @@ export default function NodeActions({ modelName, modelId, versions, ketenModelId
           <TextInput placeholder="Consultant" value={cons} onChange={e => setCons(e.target.value)} />
           <TextInput placeholder="Omschrijving (optioneel)" value={note} onChange={e => setNote(e.target.value)} />
           <TextInput placeholder="Ticket (optioneel)" value={regTicket} onChange={e => setRegTicket(e.target.value)} />
+          {tstAanroepers.length > 0 && (
+            <div className="text-meta text-xs">
+              Wordt in TST aangeroepen door{' '}
+              {tstAanroepers.map((a, i) => (
+                <span key={i}>
+                  {i > 0 && ', '}
+                  <span className="text-ink">{a.label}</span> <span className="font-mono text-ink">{a.versions.TST}</span>
+                </span>
+              ))}
+              <span className="text-ink-3"> — die aanroep gaat mee naar de nieuwe versie</span>
+            </div>
+          )}
           <div className="flex gap-2 pt-0.5">
             <Button variant="primary" className="flex-1" onClick={handleRegister}
               disabled={saving || !versie.trim() || !cons.trim()}>
