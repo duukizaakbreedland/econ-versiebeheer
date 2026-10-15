@@ -10,7 +10,7 @@
 // je ziet wie waaraan hangt. Wordt overal dezelfde versie aangeroepen, dan is
 // het één gedeelde node met meerdere pijlen.
 
-import { ORANJE, GEEL, VIOLET, GROEN, BLAUW } from './kleuren.js'
+import { ORANJE, GEEL, VIOLET, GROEN, BLAUW, GRIJS } from './kleuren.js'
 import { vergelijkVersies } from './versies.js'
 import { ENVS } from './snapshot.js'
 
@@ -204,6 +204,7 @@ export const STATUS_CFG = {
   IN_ONTWIKKELING: { label: 'In ontwikkeling',  familie: GEEL,   uitleg: 'TST wijkt af van ACC' },
   KLAAR_VOOR_PROD: { label: 'Klaar voor PROD',  familie: BLAUW,  uitleg: 'ACC wijkt af van PROD, TST is gelijk aan ACC' },
   BEIDE_OPEN:      { label: 'Beide open',       familie: ORANJE, uitleg: 'Er staat werk in TST én er wacht iets in ACC op PROD' },
+  LEEG:            { label: 'Draait nergens',   familie: GRIJS,  uitleg: 'Het hoofdmodel heeft in geen enkele omgeving een versie' },
 }
 
 function verschilt(a, b) {
@@ -215,8 +216,9 @@ export function chainStats(chain, graaf, snap) {
   const rootIn = env => Boolean(snap.current(chain.rootModelId, env))
   const nietIn = ENVS.filter(e => !rootIn(e))
 
+  // Draait de keten wel in a maar niet in b, dan verschilt alles
   const afwijkend = (a, b) => [...new Set(graaf.nodes
-    .filter(n => rootIn(a) && rootIn(b) && verschilt(n.versions[a], n.versions[b]))
+    .filter(n => rootIn(a) && verschilt(n.versions[a], n.versions[b]))
     .map(n => n.modelId))]
   const tstAfwijkend = afwijkend('TST', 'ACC')
   const accAfwijkend = afwijkend('ACC', 'PROD')
@@ -225,9 +227,7 @@ export function chainStats(chain, graaf, snap) {
   if (tstAfwijkend.length && accAfwijkend.length) status = 'BEIDE_OPEN'
   else if (accAfwijkend.length) status = 'KLAAR_VOOR_PROD'
   else if (tstAfwijkend.length) status = 'IN_ONTWIKKELING'
-  // Een keten die alleen in TST bestaat is per definitie in ontwikkeling
-  if (status === 'STABIEL' && rootIn('TST') && !rootIn('PROD')) status = 'IN_ONTWIKKELING'
-  if (status === 'STABIEL' && rootIn('ACC') && !rootIn('PROD')) status = 'KLAAR_VOOR_PROD'
+  if (nietIn.length === 3) status = 'LEEG'
 
   const openWerk = [...new Map(graaf.nodes.flatMap(n => n.openWerk.map(w => [w.id, { ...w, node: n }]))).values()]
   const opmerkingen = [...new Map(graaf.nodes.filter(n => n.notes?.trim())

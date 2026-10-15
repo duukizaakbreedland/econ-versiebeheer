@@ -436,7 +436,7 @@ export default function DetailPanel({ node, graaf, chainKey, ga, onClose }) {
   const sharedLabels = d.sharedIn ?? []
 
   return (
-    <aside className="relative bg-card border-l border-line flex flex-col overflow-hidden shrink-0" style={{ width }}>
+    <aside className="relative z-20 bg-card border-l border-line flex flex-col overflow-hidden shrink-0" style={{ width }}>
       <div onMouseDown={onMouseDown}
         className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/40 z-20 transition-colors"
         title="Sleep om de breedte aan te passen" />

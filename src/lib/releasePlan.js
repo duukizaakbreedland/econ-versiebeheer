@@ -365,7 +365,7 @@ export function planDelete({ snap, versionId }) {
       soort: 'aanroep', tekst: `${d.parentName} ${d.parentVersion} (${d.env})`, oud: v.version,
       nieuw: d.previousChildVersionId ? snap.version(d.previousChildVersionId)?.version : 'geen vorige versie',
     })) })
-    if (aanroepers.some(d => d.previousChildVersionId)) waarschuwingen.push('Na dit terugvallen is er geen vorige versie meer bekend; die versie is dan niet nog een keer op deze manier te verwijderen.')
+    if (kan && aanroepers.some(d => d.previousChildVersionId)) waarschuwingen.push('Na dit terugvallen is er geen vorige versie meer bekend; die versie is dan niet nog een keer op deze manier te verwijderen.')
   }
 
   const eigen = ENVS.flatMap(env => snap.callsOf(env, versionId))

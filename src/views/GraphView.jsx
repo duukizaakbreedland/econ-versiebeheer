@@ -213,7 +213,7 @@ function GraphViewInner({ chainKey, entry, routeModel, ga }) {
           )}
 
           {/* Legenda */}
-          <div className="absolute bottom-3 left-3 z-10 bg-card/90 backdrop-blur-sm border border-line rounded-lg px-2.5 py-1.5 flex items-center gap-3 text-[11px] text-ink-2">
+          <div className="absolute bottom-3 left-3 right-3 z-10 w-fit max-w-full bg-card/90 backdrop-blur-sm border border-line rounded-lg px-2.5 py-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-ink-2">
             <LegendaItem f={GEEL}   t={STATUS_TEKEN.voor}>nieuwer dan PROD</LegendaItem>
             <LegendaItem f={ORANJE} t={STATUS_TEKEN.achter}>ouder dan PROD</LegendaItem>
             <LegendaItem f={VIOLET} t={STATUS_TEKEN.anders}>afwijkend</LegendaItem>
