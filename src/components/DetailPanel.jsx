@@ -3,6 +3,7 @@ import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chain
 import {
   updateModel, updateWorkItem, addWorkItem, fetchModelVersions,
   deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment, deleteDependency,
+  fetchModels, legKoppelingVast,
 } from '../lib/api.js'
 import { useVoornaam } from '../lib/auth.jsx'
 import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput } from './ui/index.jsx'
@@ -183,18 +184,18 @@ function WerkRegel({ workItem, onChanged, onError }) {
 }
 
 // ─── Eén koppeling naar een submodel ──────────────────────────────────────────
-// Welke versie hier hangt volgt uit het model zelf en komt via de eCon-export
-// binnen; die kies je hier niet. Een koppeling die niet (meer) klopt, kun je wel
-// weghalen.
-function KoppelingRij({ dep, onVerwijder }) {
+// Nu de tool leidend is, houd je koppelingen hier zelf bij: wijzigen (andere
+// interface- of submodelversie) en weghalen, per omgeving.
+function KoppelingRij({ dep, onWijzig, onVerwijder }) {
   return (
     <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs">
         <span className="text-ink-3">via</span>
         <span className="text-mov">{dep.ifaceName}</span>
         <span className="font-mono text-ink-3">{dep.ifaceVersion}</span>
-        <span className="ml-auto">
-          <ConfirmButton confirmLabel={`Weg uit ${dep.env}?`} onConfirm={onVerwijder}>Verwijder koppeling</ConfirmButton>
+        <span className="ml-auto flex gap-1">
+          <Button variant="ghost" onClick={onWijzig}>Wijzig</Button>
+          <ConfirmButton confirmLabel={`Weg uit ${dep.env}?`} onConfirm={onVerwijder}>Verwijder</ConfirmButton>
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -205,9 +206,141 @@ function KoppelingRij({ dep, onVerwijder }) {
   )
 }
 
+// ─── Koppeling toevoegen of wijzigen ──────────────────────────────────────────
+// Deze node (de ouder) roept via een interface een submodel aan. Per omgeving
+// geldt de versie die de node daar draait. Bij wijzigen ligt het submodel vast.
+function KoppelingForm({ d, chainKey, standaardEnv, bestaand, deps, onKlaar, onAnnuleer }) {
+  const kanIn = e => Boolean(d.versions[e])
+  const [envs,        setEnvs]        = useState(() => ENV_ORDER.filter(e => e === standaardEnv && kanIn(e)))
+  const [modellen,    setModellen]    = useState([])
+  const [childId,     setChildId]     = useState(bestaand?.childModelId ?? '')
+  const [ifaceId,     setIfaceId]     = useState(bestaand?.ifaceModelId ?? '')
+  const [ifaceVersie, setIfaceVersie] = useState(bestaand?.ifaceVersion ?? '')
+  const [childVersie, setChildVersie] = useState(bestaand?.childVersion ?? '')
+  const [versies,     setVersies]     = useState({})   // modelId -> [versie]
+  const [busy,        setBusy]        = useState(false)
+  const [fout,        setFout]        = useState(null)
+
+  useEffect(() => { fetchModels().then(setModellen).catch(e => setFout(e.message)) }, [])
+
+  // Bestaande versies als suggestie bij het intikken
+  useEffect(() => {
+    for (const id of [childId, ifaceId]) {
+      if (!id || versies[id]) continue
+      fetchModelVersions(id)
+        .then(rows => setVersies(v => ({ ...v, [id]: rows.map(r => r.version) })))
+        .catch(() => {})
+    }
+  }, [childId, ifaceId])
+
+  // Nieuw submodel gekozen: neem interface en versies over van een bestaande
+  // aanroep ervan (bij voorkeur vanuit dit model), anders de interface "I<naam>"
+  function kiesSubmodel(id) {
+    setChildId(id)
+    const voorbeeld = deps.find(x => x.childModelId === id && x.parentModelId === d.modelId)
+      ?? deps.find(x => x.childModelId === id)
+    if (voorbeeld) {
+      setIfaceId(voorbeeld.ifaceModelId); setIfaceVersie(voorbeeld.ifaceVersion); setChildVersie(voorbeeld.childVersion)
+      return
+    }
+    const naam = modellen.find(m => m.id === id)?.name
+    const iface = modellen.find(m => m.type === 'INTERFACE' && m.name.toLowerCase() === `i${naam}`.toLowerCase())
+    setIfaceId(iface?.id ?? ''); setIfaceVersie(''); setChildVersie('')
+  }
+
+  async function opslaan() {
+    setBusy(true); setFout(null)
+    try {
+      await legKoppelingVast({
+        chainKey, parentModelId: d.modelId, parentNodeKey: d.nodeKey,
+        envs: envs.map(e => ({ env: e, parentVersion: d.versions[e] })),
+        ifaceModelId: ifaceId, ifaceVersion: ifaceVersie,
+        childModelId: childId, childVersion: childVersie,
+      })
+      await onKlaar()
+    } catch (e) { setFout(e.message) }
+    finally { setBusy(false) }
+  }
+
+  const submodellen = modellen.filter(m => m.type === 'MODEL' && m.id !== d.modelId)
+  const interfaces  = modellen.filter(m => m.type === 'INTERFACE')
+  const klaar = envs.length > 0 && childId && ifaceId && ifaceVersie.trim() && childVersie.trim()
+
+  return (
+    <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-2">
+      <div className="text-ink-2 text-xs font-medium">{bestaand ? 'Koppeling wijzigen' : 'Koppeling toevoegen'}</div>
+      {fout && <Banner ok={false} onClose={() => setFout(null)}>{fout}</Banner>}
+
+      {/* In welke omgevingen; de ouderversie is die van deze node daar */}
+      <div className="flex items-center gap-1 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Omgeving</span>
+        {ENV_ORDER.map(e => {
+          const aan = envs.includes(e)
+          return (
+            <button key={e} disabled={!kanIn(e)}
+              title={kanIn(e) ? `${d.label} ${d.versions[e]}` : `${d.label} draait niet in ${e}`}
+              onClick={() => setEnvs(v => aan ? v.filter(x => x !== e) : [...v, e])}
+              className="px-1.5 py-0.5 font-bold rounded transition-colors disabled:opacity-30"
+              style={aan ? { background: ENV[e].bg, color: ENV[e].ink } : { color: 'var(--ink-3)' }}>
+              {e}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Submodel</span>
+        {bestaand ? (
+          <span className="text-ink">{bestaand.childName}</span>
+        ) : (
+          <Select className="flex-1" value={childId} onChange={e => kiesSubmodel(e.target.value)}>
+            <option value="">Kies een model…</option>
+            {submodellen.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </Select>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Versie</span>
+        <TextInput list="koppeling-childversies" placeholder="bijv. 26.10.15" value={childVersie}
+          onChange={e => setChildVersie(e.target.value)} />
+        <datalist id="koppeling-childversies">
+          {(versies[childId] ?? []).map(v => <option key={v} value={v} />)}
+        </datalist>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Interface</span>
+        <Select className="flex-1" value={ifaceId} onChange={e => { setIfaceId(e.target.value); setIfaceVersie('') }}>
+          <option value="">Kies een interface…</option>
+          {interfaces.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </Select>
+      </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Versie</span>
+        <TextInput list="koppeling-ifaceversies" placeholder="bijv. 25.03.06" value={ifaceVersie}
+          onChange={e => setIfaceVersie(e.target.value)} />
+        <datalist id="koppeling-ifaceversies">
+          {(versies[ifaceId] ?? []).map(v => <option key={v} value={v} />)}
+        </datalist>
+      </div>
+
+      <div className="flex gap-2 pt-0.5">
+        <Button variant="primary" className="flex-1" disabled={busy || !klaar} onClick={opslaan}>
+          {busy ? 'Opslaan…' : 'Opslaan'}
+        </Button>
+        <Button variant="ghost" onClick={onAnnuleer}>Annuleer</Button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Koppelingen-sectie ───────────────────────────────────────────────────────
-function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
-  const [env, setEnv] = useState('PROD')
+// Bij een model: wie roept het aan, en wat roept het aan (met toevoegen,
+// wijzigen en weghalen). Bij een interface: welke ouder via deze interface welk
+// submodel aanroept, met weghalen.
+function KoppelingenSectie({ node, chain, chainKey, chains, deps, aanroepers = [], onChanged, onError }) {
+  const [env,     setEnv]     = useState('PROD')
+  const [bewerkt, setBewerkt] = useState(null)   // null | 'nieuw' | dep
 
   // Koppeling weghalen in de gekozen omgeving; daarna laden graph en paneel opnieuw
   async function verwijder(id) {
@@ -216,11 +349,16 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
   }
 
   const d        = node.data
+  const isIface  = node.type === 'interface'
   // Alleen de koppelingen van de versie die deze node in de keten heeft: een
   // model kan in dezelfde keten op meerdere versies hangen
   const versie   = d.versions[env]
-  const kinderen = deps.filter(x => x.env === env && x.parentModelId === d.modelId && x.parentVersion === versie)
-  const ouders   = deps.filter(x => x.env === env && x.childModelId  === d.modelId && x.childVersion  === versie)
+  const kinderen = isIface ? [] : deps.filter(x => x.env === env && x.parentModelId === d.modelId && x.parentVersion === versie)
+  const ouders   = isIface ? [] : deps.filter(x => x.env === env && x.childModelId  === d.modelId && x.childVersion  === versie)
+  // Interface: de aanroepen die via deze versie lopen, vanuit de ouder(s) in deze keten
+  const viaIface = !isIface ? [] : deps.filter(x => x.env === env &&
+    x.ifaceModelId === d.modelId && x.ifaceVersion === versie &&
+    aanroepers.some(a => a.modelId === x.parentModelId && a.versions?.[env] === x.parentVersion))
   const isShared = d.sharedIn?.length > 0
 
   // Terugval op de vaste ketenstructuur zolang er niets is vastgelegd
@@ -234,10 +372,6 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
     .filter(Boolean)
 
   const heeftKoppelingen = kinderen.length > 0 || ouders.length > 0
-
-  if (!heeftKoppelingen && structParents.length === 0 && structChildren.length === 0 && !isShared) {
-    return null
-  }
 
   return (
     <Section title="Koppelingen"
@@ -255,6 +389,27 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
         </div>
       }>
       <div className="space-y-3">
+        {isIface && (
+          <div>
+            <div className="text-ink-3 text-xs mb-1">Aanroepen via {d.label} {versie ?? ''}</div>
+            {viaIface.length === 0 && (
+              <div className="text-ink-3 text-xs">Geen aanroepen via deze interface in {env}.</div>
+            )}
+            {viaIface.map(k => (
+              <div key={k.id} className="flex items-center gap-1.5 text-xs py-0.5">
+                <span className="text-ink-2 truncate">{k.parentName}</span>
+                <span className="font-mono text-ink-3">{k.parentVersion}</span>
+                <span className="text-ink-3">→</span>
+                <span className="text-ink truncate">{k.childName}</span>
+                <span className="font-mono text-ink-2">{k.childVersion}</span>
+                <span className="ml-auto">
+                  <ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(k.id)}>Verwijder</ConfirmButton>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {ouders.length > 0 && (
           <div>
             <div className="text-ink-3 text-xs mb-1">Wordt aangesproken door</div>
@@ -278,14 +433,17 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
           <div>
             <div className="text-ink-3 text-xs mb-1">Spreekt aan</div>
             <div className="space-y-1.5">
-              {kinderen.map(k => (
-                <KoppelingRij key={k.id} dep={k} onVerwijder={() => verwijder(k.id)} />
+              {kinderen.map(k => bewerkt?.id === k.id ? (
+                <KoppelingForm key={k.id} d={d} chainKey={chainKey} standaardEnv={env} bestaand={k} deps={deps}
+                  onKlaar={async () => { setBewerkt(null); await onChanged() }} onAnnuleer={() => setBewerkt(null)} />
+              ) : (
+                <KoppelingRij key={k.id} dep={k} onWijzig={() => setBewerkt(k)} onVerwijder={() => verwijder(k.id)} />
               ))}
             </div>
           </div>
         )}
 
-        {!heeftKoppelingen && (
+        {!isIface && !heeftKoppelingen && (structParents.length > 0 || structChildren.length > 0) && (
           <div>
             <div className="text-ink-3 text-xs mb-1">
               Nog niets vastgelegd voor {env} — vaste ketenstructuur
@@ -302,6 +460,16 @@ function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
             ))}
           </div>
         )}
+
+        {/* Een nieuwe aanroep vanuit deze node vastleggen */}
+        {!isIface && (bewerkt === 'nieuw' ? (
+          <KoppelingForm d={d} chainKey={chainKey} standaardEnv={env} deps={deps}
+            onKlaar={async () => { setBewerkt(null); await onChanged() }} onAnnuleer={() => setBewerkt(null)} />
+        ) : (
+          <Button variant="ghost" disabled={!ENV_ORDER.some(e => d.versions[e])} onClick={() => setBewerkt('nieuw')}>
+            + Koppeling toevoegen
+          </Button>
+        ))}
 
         {isShared && (
           <div className="bg-cond-bg border border-cond-bg-2 rounded-lg p-2.5">
@@ -684,8 +852,8 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         )}
 
         {/* Koppelingen — per omgeving te bekijken */}
-        <KoppelingenSectie node={node} chain={chain} chains={chains} deps={deps}
-          onChanged={handleChanged} onError={setErr} />
+        <KoppelingenSectie node={node} chain={chain} chainKey={chainKey} chains={chains} deps={deps}
+          aanroepers={aanroepers} onChanged={handleChanged} onError={setErr} />
       </div>
     </aside>
   )

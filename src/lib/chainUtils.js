@@ -187,24 +187,9 @@ export function ketenGraaf(chain, deps = []) {
     if (p.ouderPad) verbind(idVan[groepVanPad.get(p.ouderPad)], idVan[groepVanPad.get(pad)])
   }
 
-  // Wat via de koppelingen niet te bereiken is, staat er via de vaste
-  // ketenstructuur bij, maar zonder versies: in deze keten roept niemand het
-  // aan. De actieve versie van het model als geheel komt uit een andere keten
-  // en zou hier iets laten zien dat niet klopt.
-  const bereikt = new Set(nodes.map(x => x.nodeKey))
-  for (const s of chain.nodes) {
-    if (!bereikt.has(s.id)) {
-      nodes.push({ ...s, nodeKey: s.id, versions: {}, ontbreekt: [], workItem: undefined })
-    }
-  }
-  for (const e of chain.edges) {
-    if (bereikt.has(e.target)) continue
-    const bronnen = bereikt.has(e.source)
-      ? nodes.filter(x => x.nodeKey === e.source).map(x => x.id)
-      : [e.source]
-    bronnen.forEach(source => verbind(source, e.target))
-  }
-
+  // Wat via de koppelingen niet te bereiken is, roept in deze keten niemand aan:
+  // dat laten we weg in plaats van een leeg blok te tekenen. Leg je een
+  // koppeling aan (detailpaneel → Koppelingen), dan verschijnt het weer.
   return { nodes, edges }
 }
 

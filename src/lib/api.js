@@ -895,6 +895,86 @@ export async function removeChainEdge(edgeId) {
   throwIf(error)
 }
 
+// ─── Koppeling toevoegen of wijzigen ──────────────────────────────────────────
+// Leg vast dat een ouderversie via een interface een submodel aanroept, per
+// omgeving. Zo houd je de koppelingen met de hand bij nu de tool leidend is.
+// envs: [{ env, parentVersion }]. Versies die nog niet bestaan, komen erbij.
+// Per ouderversie en submodel is er één aanroep: een andere interfaceversie
+// vervangt de oude. Kent de keten het submodel of de interface nog niet, dan
+// komen ze erbij, zodat de graph ze toont.
+export async function legKoppelingVast({ chainKey, parentModelId, parentNodeKey, envs, ifaceModelId, ifaceVersion, childModelId, childVersion, orgSlug = 'buva' }) {
+  if (!envs?.length)          throw new Error('Kies minstens één omgeving')
+  if (!ifaceVersion?.trim())  throw new Error('Vul de interfaceversie in')
+  if (!childVersion?.trim())  throw new Error('Vul de versie van het submodel in')
+  const orgId = await getOrgId(orgSlug)
+
+  const zorgVoorVersie = async (modelId, version) => {
+    const { data, error } = await supabase
+      .from('model_versions')
+      .upsert({ model_id: modelId, version: version.trim() }, { onConflict: 'model_id,version' })
+      .select('id').single()
+    throwIf(error)
+    return data.id
+  }
+  const ifaceMv = await zorgVoorVersie(ifaceModelId, ifaceVersion)
+  const childMv = await zorgVoorVersie(childModelId, childVersion)
+
+  const { data: omgevingen, error: envErr } = await supabase
+    .from('environments').select('id, name').eq('organization_id', orgId)
+  throwIf(envErr)
+  const envId = Object.fromEntries((omgevingen ?? []).map(e => [e.name, e.id]))
+
+  for (const { env, parentVersion } of envs) {
+    const { data: ouder, error: pvErr } = await supabase
+      .from('model_versions').select('id')
+      .eq('model_id', parentModelId).eq('version', parentVersion).single()
+    throwIf(pvErr)
+
+    // Een aanroep met een andere interfaceversie gaat eruit
+    throwIf((await supabase.from('dependencies').delete()
+      .eq('environment_id', envId[env])
+      .eq('parent_version_id', ouder.id)
+      .eq('child_model_id', childModelId)
+      .neq('interface_version_id', ifaceMv)).error)
+
+    throwIf((await supabase.from('dependencies').upsert({
+      environment_id:            envId[env],
+      parent_version_id:         ouder.id,
+      interface_version_id:      ifaceMv,
+      child_model_id:            childModelId,
+      child_version_id:          childMv,
+      child_missing_in_export:   false,
+      previous_child_version_id: null,
+    }, { onConflict: 'environment_id,parent_version_id,interface_version_id,child_model_id' })).error)
+  }
+
+  // De keten moet interface en submodel kennen, anders tekent de graph ze niet
+  const { data: keten, error: kErr } = await supabase
+    .from('chains')
+    .select('id, chain_nodes ( node_key, model_id )')
+    .eq('organization_id', orgId).eq('key', chainKey).single()
+  throwIf(kErr)
+  const keys = (keten.chain_nodes ?? []).map(n => n.node_key)
+  const sleutelVan = async modelId => {
+    const bestaand = keten.chain_nodes.find(n => n.model_id === modelId)
+    if (bestaand) return bestaand.node_key
+    const { data: m, error } = await supabase.from('models').select('name').eq('id', modelId).single()
+    throwIf(error)
+    const key = keys.includes(m.name) ? `${m.name}_${keys.length}` : m.name
+    throwIf((await supabase.from('chain_nodes').insert({ chain_id: keten.id, node_key: key, model_id: modelId })).error)
+    keys.push(key)
+    keten.chain_nodes.push({ node_key: key, model_id: modelId })
+    return key
+  }
+  const ifaceKey = await sleutelVan(ifaceModelId)
+  const childKey = await sleutelVan(childModelId)
+  throwIf((await supabase.from('chain_edges').upsert(
+    [{ chain_id: keten.id, source_key: parentNodeKey, target_key: ifaceKey },
+     { chain_id: keten.id, source_key: ifaceKey,      target_key: childKey }],
+    { onConflict: 'chain_id,source_key,target_key', ignoreDuplicates: true }
+  )).error)
+}
+
 // ─── Eén koppeling weghalen ───────────────────────────────────────────────────
 // Een aanroep van een ouderversie naar een submodel, in één omgeving. Alleen in
 // de tool: staat de aanroep in eCon nog, dan brengt de volgende export hem terug.
