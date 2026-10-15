@@ -77,10 +77,13 @@ export function statusSamenvatting(versions) {
 const MAX_PADEN = 5000
 
 export function ketenGraaf(chain, deps = []) {
-  const statisch = () => ({
-    nodes: chain.nodes.map(n => ({ ...n, nodeKey: n.id, ontbreekt: [] })),
-    edges: chain.edges,
-  })
+  const statisch = () => {
+    const doelen = new Set(chain.edges.map(e => e.target))
+    return {
+      nodes: chain.nodes.map(n => ({ ...n, nodeKey: n.id, isWortel: !doelen.has(n.id), ontbreekt: [] })),
+      edges: chain.edges,
+    }
+  }
 
   const nodePerModel = {}
   chain.nodes.forEach(n => { nodePerModel[n.modelId] = n })
@@ -165,6 +168,7 @@ export function ketenGraaf(chain, deps = []) {
     ...g.bron,
     id:        idVan[h],
     nodeKey:   g.bron.id,
+    isWortel:  g.bron.id === wortel.id,
     versions:  g.versions,
     ontbreekt: ENVS.filter(e => g.ontbreekt.has(e)),
     // Werk hangt aan een versie: toon het werk van de TST-versie van deze variant
@@ -204,6 +208,19 @@ export function ketenGraaf(chain, deps = []) {
   return { nodes, edges }
 }
 
+// ─── Onderweg naar PROD ───────────────────────────────────────────────────────
+// Wijkt een node in env af van PROD op een manier die werk betekent: nieuwer, of
+// niet te vergelijken. Ouder telt niet (die omgeving loopt achter), en een model
+// dat er niet draait ook niet: het verschil zit dan al in de ouder die het (niet)
+// aanroept. Alleen een hoofdmodel dat nog niet in PROD staat, is nieuw.
+export function wijktAf(n, env) {
+  const v = n.versions?.[env], p = n.versions?.PROD
+  if (v && p) return ['voor', 'anders'].includes(versieStatus(v, p))
+  return Boolean(v) && !p && Boolean(n.isWortel)
+}
+
+export const onderweg = n => wijktAf(n, 'TST') || wijktAf(n, 'ACC')
+
 // De keten met zijn nodes zoals de graph ze toont: per aangeroepen versie, met
 // het werk van die versie. Gebruik dit voor alles wat iets over een keten zegt
 // (overzicht, ketenmenu): de versie van het model als geheel zegt niets over
@@ -229,11 +246,7 @@ export function chainStats(chain) {
   // Per model tellen: hangt een model op twee plekken in de keten, dan telt het
   // één keer. Interfaces tellen mee: een andere interfaceversie is ook een verschil.
   const isWortel = n => chain.wortel !== undefined && n.nodeKey === chain.wortel
-  const verschil = (n, env) => {
-    const v = n.versions[env], p = n.versions.PROD
-    if (v && p) return ['voor', 'anders'].includes(versieStatus(v, p))
-    return Boolean(v) && !p && isWortel(n)
-  }
+  const verschil  = (n, env) => wijktAf({ ...n, isWortel: isWortel(n) }, env)
   const afwijkend = env => [...new Set(chain.nodes
     .filter(n => verschil(n, env))
     .map(n => n.modelId ?? n.label))]

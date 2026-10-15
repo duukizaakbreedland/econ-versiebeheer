@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
-  updateModel, updateWorkItem, deleteWorkItem, addWorkItem, fetchModelVersions,
+  updateModel, updateWorkItem, addWorkItem, fetchModelVersions,
   deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment,
 } from '../lib/api.js'
 import { useVoornaam } from '../lib/auth.jsx'
@@ -178,14 +178,6 @@ function WerkRegel({ workItem, onChanged, onError }) {
           onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
       </div>
 
-      {/* Verwijdert alleen deze aantekening — de versie zelf blijft staan.
-          Die neem je terug met "Verwijder versie" op de versieregel erboven. */}
-      <div className="flex justify-end pt-0.5">
-        <ConfirmButton confirmLabel="Werk verwijderen?"
-          onConfirm={() => run(() => deleteWorkItem(workItem.id))}>
-          Verwijder werk
-        </ConfirmButton>
-      </div>
     </div>
   )
 }

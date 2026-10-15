@@ -1,5 +1,6 @@
 import dagre from 'dagre'
 import { MarkerType, Position } from 'reactflow'
+import { onderweg } from '../../lib/chainUtils.js'
 
 // ─── Node dimensies ───────────────────────────────────────────────────────────
 export const MODEL_W  = 230
@@ -26,7 +27,9 @@ function extraRegels({ workItem, sharedIn, ontbreekt }) {
 export function applyLayout(rawNodes, rawEdges, chainKey, shared) {
   const dataVan = n => ({
     label: n.label, versions: n.versions ?? {}, notes: n.notes,
-    workItem: n.workItem, werkPerVersie: n.werkPerVersie, modelId: n.modelId, nodeKey: n.nodeKey ?? n.id,
+    // Het werk alleen zolang de node nog onderweg is: staat hij overal gelijk, dan is het klaar
+    workItem: onderweg(n) ? n.workItem : undefined,
+    werkPerVersie: n.werkPerVersie, modelId: n.modelId, nodeKey: n.nodeKey ?? n.id,
     ontbreekt: n.ontbreekt ?? [],
     sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
   })
