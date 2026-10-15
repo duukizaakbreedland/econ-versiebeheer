@@ -289,16 +289,44 @@ async function revertWorkItemStatus(modelVersionIds, envName) {
 async function herkoppelAanroepers({ envId, childModelId, childVersionId, aanroepers }) {
   if (!aanroepers?.length) return    // hoofdmodel: gebruikt zijn eigen versie al
 
+  // Alle aanroepen van dit model, in alle omgevingen: ontbreekt de aanroep hier
+  // (bijvoorbeeld omdat de vorige versie is verwijderd), dan leggen we hem aan
+  // naar het voorbeeld van een andere omgeving.
   const { data: rijen, error } = await supabase
     .from('dependencies')
-    .select('id, child_version_id, parent: parent_version_id ( model_id, version )')
-    .eq('environment_id', envId)
+    .select('id, environment_id, parent_version_id, interface_version_id, child_version_id, parent: parent_version_id ( model_id, version )')
     .eq('child_model_id', childModelId)
   throwIf(error)
 
-  const sleutels = new Set(aanroepers.map(a => `${a.modelId}|${a.version}`))
-  const teWijzigen = (rijen ?? []).filter(r =>
-    sleutels.has(`${r.parent?.model_id}|${r.parent?.version}`) && r.child_version_id !== childVersionId)
+  const vanOuder = a => r => r.parent?.model_id === a.modelId && r.parent?.version === a.version
+  const teWijzigen = []
+  for (const a of aanroepers) {
+    const hier = (rijen ?? []).filter(r => r.environment_id === envId && vanOuder(a)(r))
+    if (hier.length) {
+      teWijzigen.push(...hier.filter(r => r.child_version_id !== childVersionId))
+      continue
+    }
+    // Hetzelfde interface als waarmee deze ouderversie hem elders aanroept, anders
+    // dat van een andere versie van de ouder
+    const voorbeeld = (rijen ?? []).find(vanOuder(a)) ?? (rijen ?? []).find(r => r.parent?.model_id === a.modelId)
+    if (!voorbeeld) continue
+    let ouderId = vanOuder(a)(voorbeeld) ? voorbeeld.parent_version_id : null
+    if (!ouderId) {
+      const { data: mv, error: mvErr } = await supabase
+        .from('model_versions').select('id')
+        .eq('model_id', a.modelId).eq('version', a.version).maybeSingle()
+      throwIf(mvErr)
+      ouderId = mv?.id
+    }
+    if (!ouderId) continue
+    throwIf((await supabase.from('dependencies').insert({
+      environment_id:       envId,
+      parent_version_id:    ouderId,
+      interface_version_id: voorbeeld.interface_version_id,
+      child_model_id:       childModelId,
+      child_version_id:     childVersionId,
+    })).error)
+  }
 
   // De versie is net geregistreerd, dus hij bestaat: de ontbreekt-vlag vervalt.
   // Wat er stond onthouden we, zodat verwijderen van de nieuwe versie de aanroep
@@ -319,40 +347,45 @@ async function herkoppelAanroepers({ envId, childModelId, childVersionId, aanroe
 // Een nieuwe versie in de tool heeft nog geen koppelingen: wat hij aanroept
 // staat in eCon, en komt pas met de volgende export binnen. Tot die tijd gaan we
 // ervan uit dat hij aanroept wat de vorige versie aanriep; zonder dat vallen al
-// zijn submodellen in de graph weg ("—"). vorige = { env, version }: de versie
-// die de node tot nu toe draaide, in deze omgeving of anders de eerstvolgende
-// erboven. Koppelingen die de nieuwe versie al heeft, blijven staan.
-async function neemKoppelingenOver({ orgId, modelId, vorige, naarEnvId, naarMvId }) {
-  if (!vorige?.version) return
+// zijn submodellen in de graph weg ("—"). vorigen = [{ env, version }]: de
+// versies die de node draait, deze omgeving eerst en dan die erboven. De eerste
+// met koppelingen telt. Koppelingen die de nieuwe versie al heeft, blijven staan.
+async function neemKoppelingenOver({ orgId, modelId, vorigen = [], naarEnvId, naarMvId }) {
+  for (const vorige of vorigen) {
+    if (!vorige?.version) continue
 
-  const { data: vorigeMv, error: mvErr } = await supabase
-    .from('model_versions').select('id')
-    .eq('model_id', modelId).eq('version', vorige.version)
-    .maybeSingle()
-  throwIf(mvErr)
-  if (!vorigeMv || vorigeMv.id === naarMvId) return
+    const { data: vorigeMv, error: mvErr } = await supabase
+      .from('model_versions').select('id')
+      .eq('model_id', modelId).eq('version', vorige.version)
+      .maybeSingle()
+    throwIf(mvErr)
 
-  const { data: vanEnv, error: envErr } = await supabase
-    .from('environments').select('id')
-    .eq('organization_id', orgId).eq('name', vorige.env).single()
-  throwIf(envErr)
+    const { data: vanEnv, error: envErr } = await supabase
+      .from('environments').select('id')
+      .eq('organization_id', orgId).eq('name', vorige.env).single()
+    throwIf(envErr)
 
-  const { data: rijen, error } = await supabase
-    .from('dependencies')
-    .select('interface_version_id, child_model_id, child_version_id, child_missing_in_export')
-    .eq('environment_id', vanEnv.id)
-    .eq('parent_version_id', vorigeMv.id)
-  throwIf(error)
-  if (!rijen?.length) return
+    // Dezelfde versie in dezelfde omgeving heeft niets over te dragen
+    if (!vorigeMv || (vorigeMv.id === naarMvId && vanEnv.id === naarEnvId)) continue
 
-  throwIf((await supabase.from('dependencies').upsert(
-    rijen.map(r => ({ ...r, environment_id: naarEnvId, parent_version_id: naarMvId })),
-    { onConflict: 'environment_id,parent_version_id,interface_version_id,child_model_id', ignoreDuplicates: true }
-  )).error)
+    const { data: rijen, error } = await supabase
+      .from('dependencies')
+      .select('interface_version_id, child_model_id, child_version_id, child_missing_in_export')
+      .eq('environment_id', vanEnv.id)
+      .eq('parent_version_id', vorigeMv.id)
+    throwIf(error)
+    if (!rijen?.length) continue
+
+    throwIf((await supabase.from('dependencies').upsert(
+      rijen.map(r => ({ ...r, environment_id: naarEnvId, parent_version_id: naarMvId })),
+      { onConflict: 'environment_id,parent_version_id,interface_version_id,child_model_id', ignoreDuplicates: true }
+    )).error)
+    return
+  }
 }
 
 // ─── Nieuwe versie registreren ────────────────────────────────────────────────
-export async function registerVersion({ modelName, envName, version, consultant, note, ticket, aanroepers, vorige, orgSlug = 'buva' }) {
+export async function registerVersion({ modelName, envName, version, consultant, note, ticket, aanroepers, vorigen, orgSlug = 'buva' }) {
   const orgId = await getOrgId(orgSlug)
 
   const { data: env, error: envErr } = await supabase
@@ -373,7 +406,7 @@ export async function registerVersion({ modelName, envName, version, consultant,
 
   await activateVersion(env.id, mv.id)
 
-  await neemKoppelingenOver({ orgId, modelId: model.id, vorige, naarEnvId: env.id, naarMvId: mv.id })
+  await neemKoppelingenOver({ orgId, modelId: model.id, vorigen, naarEnvId: env.id, naarMvId: mv.id })
   await herkoppelAanroepers({ envId: env.id, childModelId: model.id, childVersionId: mv.id, aanroepers })
 
   if (consultant) {
