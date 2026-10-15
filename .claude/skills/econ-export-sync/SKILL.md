@@ -1,14 +1,23 @@
 ---
 name: econ-export-sync
-description: Werk de eCon-versiebeheer-tool (Supabase) bij op basis van nieuwe eCon-exports per omgeving (TST/ACC/PRD), met promoties in plaats van overschrijven. Gebruik zodra iemand nieuwe modelexports (zips) en/of Generic Model-Excels aanlevert, of vraagt om "de versies in de tool gelijk te zetten met eCon", "de exports te verwerken", "versiebeheer bijwerken".
+description: Controleer de eCon-versiebeheer-tool (Supabase) tegen een eCon-export per omgeving (TST/ACC/PRD) en rapporteer de verschillen. Sinds 15-10-2026 wordt de tool handmatig bijgehouden en is een export alleen nog een check; doorvoeren alleen per verschil na akkoord. Gebruik zodra iemand modelexports (zips) en/of Generic Model-Excels aanlevert, of vraagt om "de tool te checken tegen eCon", "klopt de tool nog met eCon", "de exports te vergelijken".
 ---
 
-# eCon-exports verwerken in de versiebeheer-tool
+# De versiebeheer-tool controleren tegen een eCon-export
 
-De tool moet weergeven wat er werkelijk in eCon draait. Een export is daarbij de
-waarheid; de tool houdt de historie (releases, opmerkingen, werk-items) bij. Daarom
-wordt er nooit leeggemaakt of een versie hernoemd: alleen het verschil gaat erin, en
-een versie die in de omgeving eronder al draaide wordt als **promotie** vastgelegd.
+**Sinds 15 oktober 2026 is de tool leidend.** Het team houdt versies, koppelingen en
+releases handmatig bij; een export is alleen nog een controle. Dat betekent:
+
+- Standaard **alleen vergelijken en rapporteren** (stap 1–4). Geen SQL draaien.
+- Leg de verschillen voor als lijst: per verschil wat de tool zegt en wat eCon zegt.
+  Een verschil kan betekenen dat de tool achterloopt, maar ook dat eCon nog moet worden
+  aangepast; dat beslist de gebruiker.
+- Pas na akkoord, en alleen voor de verschillen die de gebruiker aanwijst, iets doorvoeren
+  (stap 5–7). Haal uit `sync.sql` alleen de regels die bij die verschillen horen; draai nooit
+  de hele `sync.sql`, want die zet ook handmatige wijzigingen terug.
+
+Hieronder de volledige werkwijze, zoals die gold toen exports nog de waarheid waren. Voor een
+check zijn alleen de stappen tot en met 4 nodig.
 
 Al het werk loopt via `tools/sync_export.py` en de Supabase CLI. Gebruik niet de
 Supabase MCP voor het schrijven: de SQL is tientallen kB en gaat dan volledig door de
