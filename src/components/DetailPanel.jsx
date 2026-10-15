@@ -315,7 +315,9 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
 }
 
 // ─── Promoties van dit model, met terugdraaien ────────────────────────────────
-function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
+// Alleen promoties waarin een versie van deze node in- of uitging; die van
+// versies die elders draaien horen bij die andere plek.
+function PromotieSectie({ modelId, versies, refreshKey, onChanged, onError }) {
   const [rijen, setRijen] = useState(null)
   const [busy,  setBusy]  = useState(false)
 
@@ -327,7 +329,8 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
     return () => { weg = true }
   }, [modelId, refreshKey])
 
-  if (!rijen || rijen.length === 0) return null
+  const hier = (rijen ?? []).filter(p => versies.includes(p.naar) || versies.includes(p.van))
+  if (hier.length === 0) return null
 
   async function draaiTerug(logId) {
     setBusy(true)
@@ -339,7 +342,7 @@ function PromotieSectie({ modelId, refreshKey, onChanged, onError }) {
   return (
     <Section title="Promoties">
       <div className="space-y-1">
-        {rijen.slice(0, 5).map(p => (
+        {hier.slice(0, 5).map(p => (
           <div key={p.logId}
             className="flex items-center gap-2 bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5">
             <span className="text-xs font-bold shrink-0" style={{ color: ENV[p.env]?.ink }}>{p.env}</span>
@@ -375,7 +378,7 @@ function statusBijEnvs(envs) {
 }
 
 // ─── Eén versieregel, met werk toevoegen en terugnemen ────────────────────────
-function VersieRegel({ mv, envs, onChanged, onError }) {
+function VersieRegel({ mv, envs, plekken, onChanged, onError }) {
   const voornaam = useVoornaam()
 
   const [busy,   setBusy]   = useState(false)
@@ -430,6 +433,12 @@ function VersieRegel({ mv, envs, onChanged, onError }) {
         </ConfirmButton>
       </div>
 
+      {plekken && (
+        <div className="text-ink-3 text-xs mt-0.5">
+          {plekken.length > 0 ? <>Hangt onder {plekken.join(', ')}</> : 'Wordt nergens aangeroepen'}
+        </div>
+      )}
+
       {(open || mv.werk.length > 0) && (
         <div className="mt-1 space-y-1.5 pl-2 border-l border-line/60">
           {open && (
@@ -461,11 +470,11 @@ function VersieRegel({ mv, envs, onChanged, onError }) {
 }
 
 // ─── Versies met het werk dat eraan hangt ─────────────────────────────────────
-// De omgevingslabels gaan over déze node: op welke versie draait hij hier, in
-// deze keten. Hetzelfde model kan elders op een andere versie hangen (SubKaderModel
-// draait onder Profielregels op 26.02.16); die versie hoort hier niet als actief
-// te staan. Hij staat er wel bij onder "Toon alle versies".
-function VersiesSectie({ modelId, versions, refreshKey, onChanged, onError }) {
+// Gaat over déze node: welke versies draait hij hier, in deze keten. Hetzelfde
+// model kan elders op een andere versie hangen (SubProfielmodel draait onder
+// Profielmodel 26.02.16 op 26.03.25, onder 25.03.06 op 25.05.07HF); die versies
+// en het werk eraan horen niet bij deze node.
+function VersiesSectie({ modelId, versions, deps, refreshKey, onChanged, onError }) {
   const [rows, setRows] = useState(null)
   const [alles, setAlles] = useState(false)
 
@@ -482,29 +491,46 @@ function VersiesSectie({ modelId, versions, refreshKey, onChanged, onError }) {
 
   const envsVan = mv => ENV_ORDER.filter(e => versions[e] === mv.version)
 
-  // Versies waar werk aan hangt of die hier draaien eerst; de rest is ruis
-  const metInhoud = rows.filter(r => r.werk.length > 0 || envsVan(r).length > 0)
-  const zichtbaar = alles ? rows : (metInhoud.length > 0 ? metInhoud : rows.slice(0, 5))
-  const werkTotaal = rows.reduce((n, r) => n + r.werk.length, 0)
+  // Standaard alleen de versies die deze node hier draait. De rest hoort bij
+  // andere plekken waar het model hangt; ook als er werk aan hangt, is dat werk
+  // niet van deze node. Die versies staan onder "Toon ook", met waar ze wél hangen.
+  const hier   = rows.filter(r => envsVan(r).length > 0)
+  const elders = rows.filter(r => envsVan(r).length === 0)
+  const eldersMetWerk = elders.filter(r => r.werk.length > 0).length
+  const zichtbaar = alles ? [...hier, ...elders] : hier
+  const werkTotaal = hier.reduce((n, r) => n + r.werk.length, 0)
+
+  // Wie roept een versie aan, en in welke omgevingen?
+  const plekkenVan = mv => {
+    const per = {}
+    for (const x of deps) {
+      if (x.childModelId !== modelId || x.childVersion !== mv.version) continue
+      const k = `${x.parentName} ${x.parentVersion}`
+      ;(per[k] ??= []).push(x.env)
+    }
+    return Object.entries(per).map(([k, envs]) => `${k} (${ENV_ORDER.filter(e => envs.includes(e)).join(', ')})`)
+  }
 
   return (
-    <Section title={`Versies en werk (${rows.length})`} collapsible defaultOpen>
+    <Section title={`Versies en werk (${hier.length})`} collapsible defaultOpen>
+      {hier.length === 0 && !alles && (
+        <div className="text-ink-3 text-xs">Geen van de vastgelegde versies draait hier.</div>
+      )}
       <div className="space-y-2">
         {zichtbaar.map(mv => (
-          <VersieRegel key={mv.id} mv={mv} envs={envsVan(mv)} onChanged={onChanged} onError={onError} />
+          <VersieRegel key={mv.id} mv={mv} envs={envsVan(mv)}
+            plekken={envsVan(mv).length === 0 ? plekkenVan(mv) : null}
+            onChanged={onChanged} onError={onError} />
         ))}
       </div>
 
-      {rows.length > zichtbaar.length && (
-        <button onClick={() => setAlles(true)}
+      {elders.length > 0 && (
+        <button onClick={() => setAlles(a => !a)}
           className="text-meta hover:text-ink text-xs mt-2 transition-colors">
-          Toon alle {rows.length} versies
-        </button>
-      )}
-      {alles && rows.length > metInhoud.length && (
-        <button onClick={() => setAlles(false)}
-          className="text-meta hover:text-ink text-xs mt-2 transition-colors">
-          Toon minder
+          {alles
+            ? 'Toon alleen de versies van hier'
+            : `Toon ook ${elders.length} versie${elders.length !== 1 ? 's' : ''} van elders`
+              + (eldersMetWerk > 0 ? ` (${eldersMetWerk} met werk)` : '')}
         </button>
       )}
 
@@ -628,7 +654,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         {/* Versies met het werk dat eraan hangt — wat er is gedaan, vóór wat je kunt doen */}
         {isModel && (
           <VersiesSectie
-            modelId={d.modelId} versions={d.versions} refreshKey={refreshKey}
+            modelId={d.modelId} versions={d.versions} deps={deps} refreshKey={refreshKey}
             onChanged={handleChanged} onError={setErr}
           />
         )}
@@ -647,7 +673,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         {/* Wat er al gepromoveerd is, en wat daarvan terug kan */}
         {isModel && (
           <PromotieSectie
-            modelId={d.modelId} refreshKey={refreshKey}
+            modelId={d.modelId} versies={Object.values(d.versions).filter(Boolean)} refreshKey={refreshKey}
             onChanged={handleChanged} onError={setErr}
           />
         )}

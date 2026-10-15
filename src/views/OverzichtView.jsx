@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { chainStats } from '../lib/chainUtils.js'
+import { useState, useMemo } from 'react'
+import { chainStats, ketenOpgelost } from '../lib/chainUtils.js'
+import { useDependencies } from '../hooks/useDependencies.js'
 import { GROEN, GEEL, BLAUW, ORANJE } from '../lib/kleuren.js'
 
 const kleur = f => ({ color: f.ink, bg: f.bg, border: f.line })
@@ -15,9 +16,9 @@ const STATUS_CFG = {
 function ChainCard({ chainId, chain, onClick }) {
   const stats       = chainStats(chain)
   const cfg         = STATUS_CFG[stats.status]
-  const workItems   = chain.nodes.filter(n => n.workItem)
-  const totalModels = chain.nodes.filter(n => n.type === 'model').length
-  const diffModels  = chain.nodes.filter(n => n.type === 'model' && n.versions.TST !== n.versions.PROD).length
+  const workItems   = stats.workItems
+  const totalModels = stats.models
+  const diffModels  = stats.tstNewer
 
   return (
     <button
@@ -48,14 +49,14 @@ function ChainCard({ chainId, chain, onClick }) {
       {/* Werk in uitvoering */}
       {workItems.length > 0 && (
         <div className="space-y-1 mb-3 flex-1">
-          {workItems.map(n => (
-            <div key={n.id} className="flex items-center gap-2">
+          {workItems.map(w => (
+            <div key={w.id} className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-chg-bg-2 animate-pulse shrink-0" />
-              {n.workItem.ticket
-                ? <span className="text-chg text-xs font-mono">{n.workItem.ticket}</span>
-                : <span className="text-chg text-xs font-medium">{n.workItem.consultant}</span>
+              {w.ticket
+                ? <span className="text-chg text-xs font-mono">{w.ticket}</span>
+                : <span className="text-chg text-xs font-medium">{w.consultant}</span>
               }
-              <span className="text-chg text-xs truncate">{n.workItem.note}</span>
+              <span className="text-chg text-xs truncate">{w.note}</span>
             </div>
           ))}
         </div>
@@ -100,6 +101,13 @@ function StatsBalk({ chainsList }) {
 // ─── Hoofd component ──────────────────────────────────────────────────────────
 export default function OverzichtView({ onBekijkGraph, chains, loading, error }) {
   const [zoek, setZoek] = useState('')
+  const { deps } = useDependencies()
+
+  // Elke keten zoals hij werkelijk wordt aangeroepen, met het werk van die versies
+  const chainsList = useMemo(
+    () => Object.entries(chains ?? {}).map(([id, c]) => ({ id, ...ketenOpgelost(c, deps) })),
+    [chains, deps]
+  )
 
   if (loading && !chains) {
     return (
@@ -121,8 +129,6 @@ export default function OverzichtView({ onBekijkGraph, chains, loading, error })
       </div>
     )
   }
-
-  const chainsList = Object.entries(chains).map(([id, c]) => ({ id, ...c }))
 
   const zichtbaar = chainsList.filter(c =>
     c.label.toLowerCase().includes(zoek.toLowerCase()) ||

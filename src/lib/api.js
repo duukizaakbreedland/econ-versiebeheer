@@ -56,13 +56,13 @@ export async function fetchChains(orgSlug = 'buva') {
 
   if (versErr) throw versErr
 
-  const mvIds = [...new Set(versions.map(v => v.model_version_id))]
-  // Ook afgerond werk ophalen: dat hoort bij de versie en is achteraf nog
-  // relevant om te zien wie wat wanneer heeft gedaan.
+  // Al het werk, per versie: in een keten hangt een model niet per se op zijn
+  // actieve versie, en het werk dat je bij een node ziet hoort bij de versie die
+  // die node draait. Ook afgerond werk: dat is achteraf nog relevant.
   const { data: workItems } = await supabase
     .from('work_items')
-    .select('id, model_version_id, consultant, description, ticket, status, created_at')
-    .in('model_version_id', mvIds)
+    .select('id, model_version_id, consultant, description, ticket, status, created_at, model_versions ( model_id, version )')
+    .order('created_at')
 
   const versionMap = {}
   const mvIdMap    = {}
@@ -72,9 +72,14 @@ export async function fetchChains(orgSlug = 'buva') {
     mvIdMap[k]    = v.model_version_id
   }
 
-  const wiMap = {}
+  // Per model: versie -> werk. Lopend werk gaat voor afgerond, anders het nieuwste.
+  const werkPerModel = {}
   for (const wi of (workItems || [])) {
-    wiMap[wi.model_version_id] = {
+    const mv = wi.model_versions
+    if (!mv) continue
+    const per = werkPerModel[mv.model_id] ??= {}
+    if (per[mv.version] && per[mv.version].status !== 'DONE' && wi.status === 'DONE') continue
+    per[mv.version] = {
       id: wi.id, consultant: wi.consultant, note: wi.description,
       ticket: wi.ticket, status: wi.status, createdAt: wi.created_at,
     }
@@ -85,8 +90,8 @@ export async function fetchChains(orgSlug = 'buva') {
     result[c.key] = {
       label: c.label,
       nodes: c.chain_nodes.map(cn => {
-        const m     = cn.models
-        const tstMv = mvIdMap[`${m.id}:TST`]
+        const m    = cn.models
+        const werk = werkPerModel[m.id] ?? {}
         return {
           id:       cn.node_key,
           type:     m.type.toLowerCase(),
@@ -103,7 +108,8 @@ export async function fetchChains(orgSlug = 'buva') {
             ACC:  mvIdMap[`${m.id}:ACC`],
             TST:  mvIdMap[`${m.id}:TST`],
           },
-          workItem: tstMv && wiMap[tstMv] ? wiMap[tstMv] : undefined,
+          werkPerVersie: werk,
+          workItem: werk[versionMap[`${m.id}:TST`]],
         }
       }),
       edges: c.chain_edges.map(e => ({ source: e.source_key, target: e.target_key })),

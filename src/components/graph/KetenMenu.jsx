@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { chainStats } from '../../lib/chainUtils.js'
+import { chainStats, ketenOpgelost } from '../../lib/chainUtils.js'
 import { GROEN, GEEL, BLAUW, ORANJE } from '../../lib/kleuren.js'
 
 const STATUS = {
@@ -11,7 +11,7 @@ const STATUS = {
 
 const OPSLAG = 'ketenMenuOpen'
 
-export default function KetenMenu({ chains, actief, onKies }) {
+export default function KetenMenu({ chains, deps = [], actief, onKies }) {
   const [open, setOpen] = useState(() => localStorage.getItem(OPSLAG) !== 'dicht')
   const [zoek, setZoek] = useState('')
 
@@ -26,7 +26,7 @@ export default function KetenMenu({ chains, actief, onKies }) {
     const term = zoek.trim().toLowerCase()
     return Object.entries(chains)
       .map(([key, chain]) => {
-        const stats = chainStats(chain)
+        const stats = chainStats(ketenOpgelost(chain, deps))
         // Zoeken op ketennaam én op modelnaam: zo vind je waar een model in zit
         const naamRaak = chain.label.toLowerCase().includes(term)
         const modelRaak = term
@@ -36,7 +36,7 @@ export default function KetenMenu({ chains, actief, onKies }) {
       })
       .filter(r => !zoek.trim() || r.naamRaak || r.modelRaak.length > 0)
       .sort((a, b) => a.chain.label.localeCompare(b.chain.label))
-  }, [chains, zoek])
+  }, [chains, deps, zoek])
 
   if (!open) {
     return (

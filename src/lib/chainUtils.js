@@ -167,8 +167,10 @@ export function ketenGraaf(chain, deps = []) {
     nodeKey:   g.bron.id,
     versions:  g.versions,
     ontbreekt: ENVS.filter(e => g.ontbreekt.has(e)),
-    // Werk hangt aan de TST-versie van het model; alleen tonen bij de variant die die draait
-    workItem:  g.versions.TST && g.versions.TST === g.bron.versions?.TST ? g.bron.workItem : undefined,
+    // Werk hangt aan een versie: toon het werk van de TST-versie van deze variant
+    workItem:  g.bron.werkPerVersie
+      ? g.bron.werkPerVersie[g.versions.TST]
+      : g.versions.TST && g.versions.TST === g.bron.versions?.TST ? g.bron.workItem : undefined,
   }))
 
   const edges = []
@@ -198,17 +200,34 @@ export function ketenGraaf(chain, deps = []) {
   return { nodes, edges }
 }
 
-// Stats per keten voor het overzicht
+// De keten met zijn nodes zoals de graph ze toont: per aangeroepen versie, met
+// het werk van die versie. Gebruik dit voor alles wat iets over een keten zegt
+// (overzicht, ketenmenu): de versie van het model als geheel zegt niets over
+// welke versie déze keten aanroept.
+export function ketenOpgelost(chain, deps = []) {
+  return {
+    ...chain,
+    modelCount: new Set(chain.nodes.filter(n => n.type === 'model').map(n => n.modelId)).size,
+    nodes: ketenGraaf(chain, deps).nodes,
+  }
+}
+
+// Stats per keten voor het overzicht; geef een keten uit ketenOpgelost() mee
 export function chainStats(chain) {
   const models    = chain.nodes.filter(n => n.type === 'model')
-  const tstNewer  = models.filter(n => n.versions.TST !== n.versions.PROD)
-  const accNewer  = models.filter(n => n.versions.ACC !== n.versions.PROD)
-  const workItems = chain.nodes.filter(n => n.workItem).map(n => ({ model: n.label, ...n.workItem }))
+  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het één keer
+  const afwijkend = env => [...new Set(models
+    .filter(n => n.versions[env] !== n.versions.PROD)
+    .map(n => n.modelId ?? n.label))]
+  const tstNewer  = afwijkend('TST')
+  const accNewer  = afwijkend('ACC')
+  const workItems = [...new Map(chain.nodes.filter(n => n.workItem)
+    .map(n => [n.workItem.id, { model: n.label, ...n.workItem }])).values()]
 
   let status = 'STABIEL'
   if (tstNewer.length > 0 && accNewer.length > 0) status = 'ACTIEF'
   else if (accNewer.length > 0) status = 'KLAAR_VOOR_PROD'
   else if (tstNewer.length > 0) status = 'IN_ONTWIKKELING'
 
-  return { models: models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, workItems, status }
+  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, workItems, status }
 }

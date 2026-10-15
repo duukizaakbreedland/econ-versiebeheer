@@ -153,7 +153,7 @@ function GraphViewInner({ chainKey, setChainKey, chain, chains, initNodes, initE
     <div className="flex w-full" style={{ height: 'calc(100vh - 110px)' }}>
 
       {/* Ketenmenu met zoekfunctie */}
-      <KetenMenu chains={chains} actief={chainKey} onKies={setChainKey} />
+      <KetenMenu chains={chains} deps={deps} actief={chainKey} onKies={setChainKey} />
 
       {/* Graph gebied */}
       <div className="relative flex-1 min-w-0">
