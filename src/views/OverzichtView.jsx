@@ -1,68 +1,121 @@
 import { useState, useMemo } from 'react'
 import { useSnapshot } from '../hooks/useSnapshot.jsx'
-import { STATUS_CFG, versieStatus } from '../lib/chainUtils.js'
+import { ENVS, STATUS_CFG } from '../lib/chainUtils.js'
 import { datum, STATUS_LABEL } from '../lib/releasePlan.js'
-import { Spinner, Banner, Leeg } from '../components/ui/index.jsx'
-import { GEEL, BLAUW, ORANJE, ROOD, VIOLET, GRIJS } from '../lib/kleuren.js'
+import { Chip, EnvChip, Spinner, Banner, Leeg } from '../components/ui/index.jsx'
+import { GEEL, BLAUW, ORANJE, GROEN, ROOD, VIOLET, GRIJS } from '../lib/kleuren.js'
 
-// Het overzicht in drie lagen: hoe staat het ervoor (één regel), wat is er
-// onderweg (één tabel, per keten), en alle ketens (één tabel). Aandachtspunten
-// en activiteit staan er compact naast. Kleur alleen waar iets afwijkt.
+// Bovenaan de tegels en de kaarten per keten; daaronder lopende zaken,
+// aandachtspunten en activiteit als blokken in dezelfde kaartstijl.
 
 const ACTIE_TEKEN = { register: '＋', release: '↑', rollback: '↶', delete_version: '×', set_dependency: '→', remove_dependency: '⤫' }
 const VOLGORDE = { BEIDE_OPEN: 0, KLAAR_VOOR_PROD: 1, IN_ONTWIKKELING: 2, LEEG: 3, STABIEL: 4 }
-const FLOW = ['TST', 'ACC', 'PROD']
 
-// Kolommen van de twee tabellen; kop en rijen delen dezelfde maat
-const KOL_LOPEND = 'minmax(0,1fr) 6rem 6.5rem 6rem 4.5rem 4.5rem 4.5rem'
-const KOL_KETENS = 'minmax(0,1fr) 5rem 8.5rem 5.5rem 5.5rem 5.5rem'
-
-function Status({ status }) {
-  const cfg = STATUS_CFG[status]
+// ─── Tegel ────────────────────────────────────────────────────────────────────
+function Tegel({ label, value, familie, actief, onClick }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-ink-2 whitespace-nowrap" title={cfg.uitleg}>
-      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.familie.ink }} />
-      {cfg.label}
+    <button onClick={onClick}
+      className={`bg-card border rounded-xl px-4 py-3 text-left transition-colors ${actief ? 'border-accent' : 'border-line hover:border-line-2'}`}>
+      <div className="text-2xl font-bold" style={{ color: familie.ink }}>{value}</div>
+      <div className="text-meta text-xs mt-0.5">{label}</div>
+    </button>
+  )
+}
+
+// ─── Hoe ver is een versie ────────────────────────────────────────────────────
+function Voortgang({ snap, versionId }) {
+  const envs = snap.presentEnvs(versionId)
+  return (
+    <span className="inline-flex gap-0.5">
+      {['TST', 'ACC', 'PROD'].map(e => (
+        <span key={e} className="px-1 rounded text-[9px] font-bold"
+          style={envs.includes(e)
+            ? { background: `var(--env-${e.toLowerCase()}-bg)`, color: `var(--env-${e.toLowerCase()})` }
+            : { background: 'var(--off-bg)', color: 'var(--ink-4)' }}>{e}</span>
+      ))}
     </span>
   )
 }
 
-// Een versie in een omgevingskolom: gekleurd alleen als hij afwijkt van PROD
-function Versie({ v, prod, env }) {
-  if (!v) return <span className="text-ink-4">—</span>
-  const st = env === 'PROD' ? 'gelijk' : versieStatus(v, prod)
-  const kleur = st === 'voor' ? GEEL.ink : st === 'achter' ? ORANJE.ink : st === 'anders' ? VIOLET.ink : null
-  return <span className="font-mono" style={{ color: kleur ?? 'var(--ink-2)', fontWeight: kleur ? 600 : 400 }}>{v}</span>
-}
-
-// Hoe ver een versie is: een stip per omgeving
-function Stip({ aan }) {
-  return <span className="inline-block w-2 h-2 rounded-full" style={{ background: aan ? 'var(--ink-2)' : 'transparent', border: aan ? 'none' : '1px solid var(--line-strong)' }} />
-}
-
-function Paneel({ titel, count, right, children }) {
+function RootChips({ stats }) {
   return (
-    <section className="bg-card border border-line rounded-xl overflow-hidden">
-      <header className="px-4 h-10 border-b border-line/80 flex items-center gap-2">
-        <h3 className="text-ink text-xs font-semibold">{titel}</h3>
-        {count !== undefined && <span className="text-ink-3 text-xs">{count}</span>}
-        {right && <div className="ml-auto">{right}</div>}
-      </header>
-      {children}
-    </section>
+    <span className="flex items-center gap-1 flex-wrap">
+      {ENVS.map(e => stats.rootVersions[e]
+        ? <EnvChip key={e} env={e} className="font-mono"><span className="font-normal">{stats.rootVersions[e]}</span></EnvChip>
+        : <span key={e} className="px-1.5 py-0.5 rounded text-[10px] text-ink-4 border border-line/60">niet in {e}</span>)}
+    </span>
   )
 }
 
-function TabelKop({ kolommen, labels }) {
+// ─── Ketenkaart ───────────────────────────────────────────────────────────────
+function ChainCard({ entry, onClick, onModel }) {
+  const { chain, stats } = entry
+  const cfg = stats.cfg
   return (
-    <div className="grid gap-x-3 px-4 h-7 items-center bg-card-2 border-b border-line/60 text-[10px] font-semibold uppercase tracking-wide text-meta"
-      style={{ gridTemplateColumns: kolommen }}>
-      {labels.map((l, i) => <span key={i} className={i >= labels.length - 3 ? 'text-center' : ''}>{l}</span>)}
+    <div className="group bg-card border border-line rounded-xl p-4 hover:border-line-2 transition-all w-full h-full flex flex-col"
+      style={{ borderLeft: `3px solid ${cfg.familie.ink}` }}>
+      <button onClick={onClick} className="text-left">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="text-ink font-semibold text-sm leading-snug flex-1 min-w-0 truncate">{chain.label}</div>
+          <svg className="w-4 h-4 text-ink-3 group-hover:text-ink-2 transition-colors shrink-0 mt-0.5"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </div>
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <Chip familie={cfg.familie} title={cfg.uitleg}>{cfg.label}</Chip>
+          <RootChips stats={stats} />
+        </div>
+      </button>
+
+      {stats.opmerkingen.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {stats.opmerkingen.map(o => (
+            <button key={o.modelId} onClick={() => onModel(o.modelId)} className="w-full text-left flex items-start gap-1.5 text-xs rounded-md px-2 py-1"
+              style={{ background: ORANJE.bg, color: ORANJE.ink }} title={`${o.model}: ${o.tekst}`}>
+              <span className="shrink-0">✎</span>
+              <span className="min-w-0 line-clamp-2"><span className="font-semibold">{o.model}</span> — {o.tekst}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {stats.openWerk.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {stats.openWerk.map(w => (
+            <button key={w.id} onClick={() => onModel(w.modelId)} className="w-full text-left flex items-center gap-2 text-xs">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} />
+              <span className="text-ink truncate">{w.node.label}</span>
+              <span className="font-mono text-ink-3">{w.version}</span>
+              <span className="text-ink-3 truncate">{w.ticket ?? w.consultant}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 text-xs text-meta mt-auto pt-2 border-t border-line/50">
+        <span>{stats.models} modellen</span>
+        {stats.tstAfwijkend.length > 0 && <span style={{ color: GEEL.ink }}>{stats.tstAfwijkend.length} in TST anders dan ACC</span>}
+        {stats.accAfwijkend.length > 0 && <span style={{ color: BLAUW.ink }}>{stats.accAfwijkend.length} in ACC anders dan PROD</span>}
+        {stats.ontbreekt.length > 0 && <span style={{ color: ROOD.ink }}>⚠ {stats.ontbreekt.length}</span>}
+      </div>
     </div>
   )
 }
 
-const rij = 'grid gap-x-3 px-4 items-center text-xs hover:bg-hover w-full text-left'
+// ─── Blok in dezelfde kaartstijl ──────────────────────────────────────────────
+function Blok({ titel, count, familie = GRIJS, right, children }) {
+  return (
+    <section className="bg-card border border-line rounded-xl p-4 flex flex-col" style={{ borderLeft: `3px solid ${familie.ink}` }}>
+      <div className="flex items-center gap-2 mb-3">
+        <div className="text-ink font-semibold text-sm">{titel}</div>
+        {count !== undefined && <span className="text-ink-3 text-xs">{count}</span>}
+        {right && <div className="ml-auto">{right}</div>}
+      </div>
+      {children}
+    </section>
+  )
+}
 
 // ─── Hoofd component ──────────────────────────────────────────────────────────
 export default function OverzichtView({ ga }) {
@@ -113,140 +166,114 @@ export default function OverzichtView({ ga }) {
     .filter(e => !term || e.chain.label.toLowerCase().includes(term) || e.graaf.nodes.some(n => n.label.toLowerCase().includes(term)))
     .sort((a, b) => VOLGORDE[a.stats.status] - VOLGORDE[b.stats.status] || a.chain.label.localeCompare(b.chain.label))
 
-  const lopendTotaal = lopend.reduce((n, g) => n + g.werk.length + (g.chain ? 1 : 0), 0)
-  const AANDACHT_KORT = 4
+  const lopendTotaal = lopend.reduce((n, g) => n + g.werk.length, 0)
+  const AANDACHT_KORT = 5
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto px-6 py-5 space-y-4">
+      <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
 
-        {/* Hoe staat het ervoor */}
-        <div className="flex items-center gap-5 text-xs flex-wrap h-6">
-          <span className="text-ink text-sm font-semibold">{ketens.lijst.length} ketens</span>
-          {['STABIEL', 'IN_ONTWIKKELING', 'KLAAR_VOOR_PROD', 'BEIDE_OPEN', 'LEEG'].map(s => {
-            const n = telling(s)
-            if (!n) return null
-            const cfg = STATUS_CFG[s]
-            return (
-              <button key={s} onClick={() => setFilter(f => f === s ? null : s)} title={`${cfg.uitleg}. Klik om de ketenlijst te filteren.`}
-                className={`inline-flex items-center gap-1.5 border-b-2 pb-px transition-colors ${filter === s ? 'border-accent text-ink' : 'border-transparent text-ink-2 hover:text-ink'}`}>
-                <span className="w-2 h-2 rounded-full" style={{ background: cfg.familie.ink }} />
-                <span className="font-semibold text-ink">{n}</span>{cfg.label}
-              </button>
-            )
-          })}
+        {/* Tegels */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Tegel label="Ketens" value={ketens.lijst.length} familie={GRIJS} actief={filter === null} onClick={() => setFilter(null)} />
+          <Tegel label="Stabiel" value={telling('STABIEL')} familie={GROEN} actief={filter === 'STABIEL'} onClick={() => setFilter(f => f === 'STABIEL' ? null : 'STABIEL')} />
+          <Tegel label="In ontwikkeling" value={telling('IN_ONTWIKKELING') + telling('BEIDE_OPEN')} familie={GEEL} actief={filter === 'IN_ONTWIKKELING'} onClick={() => setFilter(f => f === 'IN_ONTWIKKELING' ? null : 'IN_ONTWIKKELING')} />
+          <Tegel label="Klaar voor PROD" value={telling('KLAAR_VOOR_PROD') + telling('BEIDE_OPEN')} familie={BLAUW} actief={filter === 'KLAAR_VOOR_PROD'} onClick={() => setFilter(f => f === 'KLAAR_VOOR_PROD' ? null : 'KLAAR_VOOR_PROD')} />
         </div>
 
-        {/* Wat is er onderweg */}
-        <Paneel titel="Lopende zaken" count={lopendTotaal}>
-          {lopend.length === 0 ? (
-            <Leeg className="px-4 py-6 text-center">Niets onderweg. Alles draait zoals het in PROD staat.</Leeg>
-          ) : (
-            <>
-              <TabelKop kolommen={KOL_LOPEND} labels={['Keten / model', 'Wie', 'Ticket', 'Status', 'TST', 'ACC', 'PROD']} />
-              {lopend.map(g => (
-                <div key={g.chain?.key ?? 'los'} className="border-b border-line/40 last:border-b-0">
-                  {g.chain ? (
-                    <button onClick={() => ga({ tab: 'ketens', keten: g.chain.key })} className={`${rij} h-9`} style={{ gridTemplateColumns: KOL_LOPEND }}>
-                      <span className="text-ink font-semibold truncate">{g.chain.label}</span>
-                      <span /><span />
-                      <Status status={g.stats.status} />
-                      {FLOW.map(e => <span key={e} className="text-center"><Versie v={g.stats.rootVersions[e]} prod={g.stats.rootVersions.PROD} env={e} /></span>)}
-                    </button>
-                  ) : (
-                    <div className="px-4 h-9 flex items-center text-xs text-ink-3">Werk aan versies die nu nergens in een keten draaien</div>
-                  )}
+        {/* Zoeken */}
+        <div className="relative max-w-xs">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-meta" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input data-zoekveld placeholder="Zoek keten of model…" value={zoek} onChange={e => setZoek(e.target.value)}
+            className="w-full bg-card border border-line rounded-lg pl-9 pr-3 py-2 text-ink text-sm focus:outline-none focus:border-accent placeholder-ink-3" />
+        </div>
+
+        {/* Kaarten per keten */}
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 items-stretch">
+          {zichtbaar.map(e => (
+            <ChainCard key={e.chain.key} entry={e}
+              onClick={() => ga({ tab: 'ketens', keten: e.chain.key })}
+              onModel={modelId => ga({ tab: 'ketens', keten: e.chain.key, model: modelId })} />
+          ))}
+          {zichtbaar.length === 0 && <div className="col-span-2 text-center py-12 text-ink-3 text-sm">Geen ketens gevonden</div>}
+        </div>
+
+        {/* Lopende zaken, in dezelfde kaartstijl */}
+        <Blok titel="Lopende zaken" count={lopendTotaal} familie={lopendTotaal ? GEEL : GRIJS}>
+          {lopend.length === 0 && <Leeg>Niets onderweg. Alles draait zoals het in PROD staat.</Leeg>}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
+            {lopend.map(g => (
+              <div key={g.chain?.key ?? 'los'}>
+                {g.chain ? (
+                  <button onClick={() => ga({ tab: 'ketens', keten: g.chain.key })} className="flex items-center gap-2 mb-1 text-left">
+                    <span className="text-ink font-semibold text-xs truncate">{g.chain.label}</span>
+                    <Chip familie={g.stats.cfg.familie} title={g.stats.cfg.uitleg}>{g.stats.cfg.label}</Chip>
+                  </button>
+                ) : (
+                  <div className="text-ink-3 text-xs mb-1">Werk aan versies die nu nergens in een keten draaien</div>
+                )}
+                <div className="space-y-1">
+                  {g.werk.length === 0 && <div className="text-ink-3 text-xs pl-3">Geen lopend werk; alleen de versies verschillen.</div>}
                   {g.werk.map(w => (
-                    <button key={w.id} onClick={() => naarModel(w.modelId, g.chain?.key)} className={`${rij} h-8`} style={{ gridTemplateColumns: KOL_LOPEND }}>
-                      <span className="min-w-0 truncate pl-4" title={w.note ?? ''}>
-                        <span className="text-ink">{w.modelName}</span>
-                        <span className="font-mono text-ink-3 ml-2">{w.version}</span>
-                        {w.note && <span className="text-ink-3 ml-2">· {w.note}</span>}
+                    <button key={w.id} onClick={() => naarModel(w.modelId, g.chain?.key)} className="w-full text-left flex items-center gap-2 text-xs pl-3" title={w.note ?? ''}>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} />
+                      <span className="text-ink truncate">{w.modelName}</span>
+                      <span className="font-mono text-ink-3 shrink-0">{w.version}</span>
+                      <span className="text-ink-2 shrink-0">{w.consultant}</span>
+                      {w.ticket && <span className="font-mono text-ink-3 shrink-0">{w.ticket}</span>}
+                      <span className="ml-auto shrink-0 flex items-center gap-2">
+                        <span className="text-ink-3">{STATUS_LABEL[w.status]}</span>
+                        <Voortgang snap={snap} versionId={w.versionId} />
                       </span>
-                      <span className="text-ink-2 truncate">{w.consultant}</span>
-                      <span className="font-mono text-ink-2 truncate">{w.ticket ?? <span className="text-ink-4">—</span>}</span>
-                      <span className="inline-flex items-center gap-1.5 text-ink-2 whitespace-nowrap">
-                        <span className="w-2 h-2 rounded-full" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} />
-                        {STATUS_LABEL[w.status]}
-                      </span>
-                      {FLOW.map(e => <span key={e} className="text-center"><Stip aan={snap.isPresent(w.versionId, e)} /></span>)}
                     </button>
                   ))}
                 </div>
-              ))}
-            </>
-          )}
-        </Paneel>
+              </div>
+            ))}
+          </div>
+        </Blok>
 
-        {/* Aandachtspunten en activiteit */}
-        <div className="grid gap-4 md:grid-cols-2 items-start">
-          <Paneel titel="Aandachtspunten" count={aandacht.length}
+        <div className="grid gap-3 md:grid-cols-2 items-start">
+          <Blok titel="Aandachtspunten" count={aandacht.length} familie={aandacht.length ? ORANJE : GRIJS}
             right={aandacht.length > AANDACHT_KORT && (
               <button onClick={() => setAandachtOpen(o => !o)} className="text-meta hover:text-ink text-xs">{aandachtOpen ? 'Minder' : `Alle ${aandacht.length}`}</button>
             )}>
-            {aandacht.length === 0 && <Leeg className="px-4 py-4 text-center">Geen aandachtspunten.</Leeg>}
-            {(aandachtOpen ? aandacht : aandacht.slice(0, AANDACHT_KORT)).map((a, i) => (
-              <button key={i} onClick={() => naarModel(a.modelId, a.keten?.key)} title={a.tekst}
-                className="w-full text-left px-4 h-8 hover:bg-hover flex items-center gap-2 text-xs border-b border-line/40 last:border-b-0">
-                <span className="w-4 shrink-0 text-center" style={{ color: a.soort === 'ontbreekt' ? ROOD.ink : a.soort === 'meerdere' ? VIOLET.ink : ORANJE.ink }}>
-                  {a.soort === 'ontbreekt' ? '⚠' : a.soort === 'meerdere' ? '×' : a.soort === 'opmerking' ? '✎' : '•'}
-                </span>
-                <span className="min-w-0 truncate">
-                  {a.keten && <span className="text-ink-3">{a.keten.label} · </span>}
-                  <span className="text-ink-2">{a.tekst}</span>
-                </span>
-              </button>
-            ))}
-          </Paneel>
+            {aandacht.length === 0 && <Leeg>Geen aandachtspunten.</Leeg>}
+            <div className="space-y-1">
+              {(aandachtOpen ? aandacht : aandacht.slice(0, AANDACHT_KORT)).map((a, i) => (
+                <button key={i} onClick={() => naarModel(a.modelId, a.keten?.key)} title={a.tekst}
+                  className="w-full text-left flex items-start gap-2 text-xs rounded-md px-2 py-1"
+                  style={{ background: a.soort === 'ontbreekt' ? ROOD.bg : a.soort === 'meerdere' ? VIOLET.bg : ORANJE.bg,
+                           color: a.soort === 'ontbreekt' ? ROOD.ink : a.soort === 'meerdere' ? VIOLET.ink : ORANJE.ink }}>
+                  <span className="shrink-0">{a.soort === 'ontbreekt' ? '⚠' : a.soort === 'meerdere' ? '×' : a.soort === 'opmerking' ? '✎' : '•'}</span>
+                  <span className="min-w-0 line-clamp-2">
+                    {a.keten && <span className="font-semibold">{a.keten.label}</span>}{a.keten && ' — '}{a.tekst}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Blok>
 
-          <Paneel titel="Recente activiteit"
-            right={snap.activity.length > 5 && (
+          <Blok titel="Recente activiteit" familie={GRIJS}
+            right={snap.activity.length > 6 && (
               <button onClick={() => setActiviteitOpen(o => !o)} className="text-meta hover:text-ink text-xs">{activiteitOpen ? 'Minder' : 'Meer'}</button>
             )}>
-            {snap.activity.length === 0 && <Leeg className="px-4 py-4 text-center">Nog niets gelogd. Elke actie in de tool komt hier.</Leeg>}
-            {snap.activity.slice(0, activiteitOpen ? 40 : 5).map(a => (
-              <button key={a.id} onClick={() => a.modelId ? naarModel(a.modelId) : a.logId ? ga({ tab: 'releases' }) : null}
-                title={`${a.user} · ${new Date(a.at).toLocaleString('nl-NL')}\n${a.summary}`}
-                className="w-full text-left px-4 h-8 hover:bg-hover text-xs flex items-center gap-2 border-b border-line/40 last:border-b-0">
-                <span className="text-ink-3 w-4 shrink-0 text-center">{ACTIE_TEKEN[a.action] ?? '·'}</span>
-                <span className="text-ink min-w-0 truncate flex-1">{a.summary}</span>
-                <span className="text-ink-3 whitespace-nowrap shrink-0">{a.user.split('@')[0].split('.')[0]} · {datum(a.at)}</span>
-              </button>
-            ))}
-          </Paneel>
-        </div>
-
-        {/* Alle ketens */}
-        <Paneel titel="Ketens" count={zichtbaar.length}
-          right={
-            <div className="flex items-center gap-2">
-              {filter && <button onClick={() => setFilter(null)} className="text-ink-3 hover:text-ink text-xs">filter weg ×</button>}
-              <div className="relative">
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-meta" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                </svg>
-                <input data-zoekveld placeholder="Zoek keten of model…" value={zoek} onChange={e => setZoek(e.target.value)}
-                  className="w-56 bg-page border border-line rounded-lg pl-8 pr-3 py-1 text-ink text-xs focus:outline-none focus:border-accent placeholder-ink-3" />
-              </div>
+            {snap.activity.length === 0 && <Leeg>Nog niets gelogd. Elke actie in de tool komt hier.</Leeg>}
+            <div className="space-y-1">
+              {snap.activity.slice(0, activiteitOpen ? 40 : 6).map(a => (
+                <button key={a.id} onClick={() => a.modelId ? naarModel(a.modelId) : a.logId ? ga({ tab: 'releases' }) : null}
+                  title={`${a.user} · ${new Date(a.at).toLocaleString('nl-NL')}\n${a.summary}`}
+                  className="w-full text-left flex items-center gap-2 text-xs">
+                  <span className="text-ink-3 w-4 shrink-0 text-center">{ACTIE_TEKEN[a.action] ?? '·'}</span>
+                  <span className="text-ink min-w-0 truncate flex-1">{a.summary}</span>
+                  <span className="text-ink-3 whitespace-nowrap shrink-0">{a.user.split('@')[0].split('.')[0]} · {datum(a.at)}</span>
+                </button>
+              ))}
             </div>
-          }>
-          <TabelKop kolommen={KOL_KETENS} labels={['Keten', 'Modellen', 'Status', 'TST', 'ACC', 'PROD']} />
-          {zichtbaar.length === 0 && <Leeg className="px-4 py-6 text-center">Geen ketens gevonden</Leeg>}
-          {zichtbaar.map(({ chain, stats }) => (
-            <button key={chain.key} onClick={() => ga({ tab: 'ketens', keten: chain.key })}
-              className={`${rij} h-9 border-b border-line/40 last:border-b-0`} style={{ gridTemplateColumns: KOL_KETENS }}>
-              <span className="min-w-0 truncate">
-                <span className="text-ink font-medium">{chain.label}</span>
-                {stats.openWerk.length > 0 && <span className="text-ink-3 ml-2" title={`${stats.openWerk.length} werk-item(s) lopen`}>· {stats.openWerk.length} werk</span>}
-                {stats.opmerkingen.length > 0 && <span className="ml-2" style={{ color: ORANJE.ink }} title={stats.opmerkingen.map(o => `${o.model}: ${o.tekst}`).join('\n')}>✎</span>}
-                {stats.ontbreekt.length > 0 && <span className="ml-2" style={{ color: ROOD.ink }} title="Aangeroepen versie ontbreekt in eCon">⚠</span>}
-              </span>
-              <span className="text-ink-3">{stats.models}</span>
-              <Status status={stats.status} />
-              {FLOW.map(e => <span key={e} className="text-center"><Versie v={stats.rootVersions[e]} prod={stats.rootVersions.PROD} env={e} /></span>)}
-            </button>
-          ))}
-        </Paneel>
+          </Blok>
+        </div>
       </div>
     </div>
   )
