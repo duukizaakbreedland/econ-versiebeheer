@@ -198,6 +198,12 @@ function KetenInhoud({ chain, models, run }) {
       </Card>
 
       <Card title="Verbindingen" subtitle="Wie spreekt wie aan">
+        {/* Dit is het geraamte van de keten. De graph tekent de koppelingen per
+            versie en omgeving uit de export; die haal je daar weg. */}
+        <p className="text-ink-3 text-xs mb-2">
+          De vaste opbouw van de keten. Een koppeling tussen twee versies in één omgeving haal
+          je weg in de Dependency Graph: klik op het model, bij Koppelingen.
+        </p>
         {chain.chain_edges.length === 0 && <Leeg>Nog geen verbindingen gelegd.</Leeg>}
 
         {chain.chain_edges.map(e => (

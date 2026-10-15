@@ -895,6 +895,14 @@ export async function removeChainEdge(edgeId) {
   throwIf(error)
 }
 
+// ─── Eén koppeling weghalen ───────────────────────────────────────────────────
+// Een aanroep van een ouderversie naar een submodel, in één omgeving. Alleen in
+// de tool: staat de aanroep in eCon nog, dan brengt de volgende export hem terug.
+export async function deleteDependency(id) {
+  const { error } = await supabase.from('dependencies').delete().eq('id', id)
+  throwIf(error)
+}
+
 // ─── Promotie terugdraaien ────────────────────────────────────────────────────
 // Zet de vervangen versies weer actief, haalt de gepromoveerde versies uit de
 // omgeving, zet de omgezette aanroepen terug en verwijdert de release-regel.

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
 import {
   updateModel, updateWorkItem, addWorkItem, fetchModelVersions,
-  deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment,
+  deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment, deleteDependency,
 } from '../lib/api.js'
 import { useVoornaam } from '../lib/auth.jsx'
 import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput } from './ui/index.jsx'
@@ -183,16 +183,19 @@ function WerkRegel({ workItem, onChanged, onError }) {
 }
 
 // ─── Eén koppeling naar een submodel ──────────────────────────────────────────
-// Puur ter informatie: welke versie hier hangt volgt uit het model zelf en komt
-// via de eCon-export binnen. Hier iets anders kiezen zou de werkelijkheid niet
-// veranderen, alleen het overzicht laten liegen.
-function KoppelingRij({ dep }) {
+// Welke versie hier hangt volgt uit het model zelf en komt via de eCon-export
+// binnen; die kies je hier niet. Een koppeling die niet (meer) klopt, kun je wel
+// weghalen.
+function KoppelingRij({ dep, onVerwijder }) {
   return (
     <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs">
         <span className="text-ink-3">via</span>
         <span className="text-mov">{dep.ifaceName}</span>
         <span className="font-mono text-ink-3">{dep.ifaceVersion}</span>
+        <span className="ml-auto">
+          <ConfirmButton confirmLabel={`Weg uit ${dep.env}?`} onConfirm={onVerwijder}>Verwijder koppeling</ConfirmButton>
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <span className="text-ink text-xs flex-1 min-w-0 truncate">{dep.childName}</span>
@@ -203,8 +206,14 @@ function KoppelingRij({ dep }) {
 }
 
 // ─── Koppelingen-sectie ───────────────────────────────────────────────────────
-function KoppelingenSectie({ node, chain, chains, deps }) {
+function KoppelingenSectie({ node, chain, chains, deps, onChanged, onError }) {
   const [env, setEnv] = useState('PROD')
+
+  // Koppeling weghalen in de gekozen omgeving; daarna laden graph en paneel opnieuw
+  async function verwijder(id) {
+    try { await deleteDependency(id); await onChanged() }
+    catch (e) { onError(e.message) }
+  }
 
   const d        = node.data
   // Alleen de koppelingen van de versie die deze node in de keten heeft: een
@@ -257,6 +266,9 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
                 <span className="ml-auto text-meta">
                   als <span className="font-mono text-ink">{o.childVersion}</span>
                 </span>
+                <ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(o.id)}>
+                  Verwijder
+                </ConfirmButton>
               </div>
             ))}
           </div>
@@ -267,7 +279,7 @@ function KoppelingenSectie({ node, chain, chains, deps }) {
             <div className="text-ink-3 text-xs mb-1">Spreekt aan</div>
             <div className="space-y-1.5">
               {kinderen.map(k => (
-                <KoppelingRij key={k.id} dep={k} />
+                <KoppelingRij key={k.id} dep={k} onVerwijder={() => verwijder(k.id)} />
               ))}
             </div>
           </div>
@@ -672,7 +684,8 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
         )}
 
         {/* Koppelingen — per omgeving te bekijken */}
-        <KoppelingenSectie node={node} chain={chain} chains={chains} deps={deps} />
+        <KoppelingenSectie node={node} chain={chain} chains={chains} deps={deps}
+          onChanged={handleChanged} onError={setErr} />
       </div>
     </aside>
   )
