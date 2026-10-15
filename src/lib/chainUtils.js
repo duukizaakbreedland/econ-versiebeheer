@@ -183,11 +183,15 @@ export function ketenGraaf(chain, deps = []) {
     if (p.ouderPad) verbind(idVan[groepVanPad.get(p.ouderPad)], idVan[groepVanPad.get(pad)])
   }
 
-  // Wat via de koppelingen niet te bereiken is (nog niets vastgelegd), komt er
-  // zoals voorheen bij via de vaste ketenstructuur
+  // Wat via de koppelingen niet te bereiken is, staat er via de vaste
+  // ketenstructuur bij, maar zonder versies: in deze keten roept niemand het
+  // aan. De actieve versie van het model als geheel komt uit een andere keten
+  // en zou hier iets laten zien dat niet klopt.
   const bereikt = new Set(nodes.map(x => x.nodeKey))
   for (const s of chain.nodes) {
-    if (!bereikt.has(s.id)) nodes.push({ ...s, nodeKey: s.id, ontbreekt: [] })
+    if (!bereikt.has(s.id)) {
+      nodes.push({ ...s, nodeKey: s.id, versions: {}, ontbreekt: [], workItem: undefined })
+    }
   }
   for (const e of chain.edges) {
     if (bereikt.has(e.target)) continue
@@ -205,8 +209,10 @@ export function ketenGraaf(chain, deps = []) {
 // (overzicht, ketenmenu): de versie van het model als geheel zegt niets over
 // welke versie déze keten aanroept.
 export function ketenOpgelost(chain, deps = []) {
+  const heeftOuder = new Set(chain.edges.map(e => e.target))
   return {
     ...chain,
+    wortel: chain.nodes.find(n => !heeftOuder.has(n.id))?.id,
     modelCount: new Set(chain.nodes.filter(n => n.type === 'model').map(n => n.modelId)).size,
     nodes: ketenGraaf(chain, deps).nodes,
   }
@@ -215,17 +221,30 @@ export function ketenOpgelost(chain, deps = []) {
 // Stats per keten voor het overzicht; geef een keten uit ketenOpgelost() mee
 export function chainStats(chain) {
   const models    = chain.nodes.filter(n => n.type === 'model')
-  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het één keer.
-  // Interfaces tellen mee: roept een ouder in TST een andere interfaceversie aan,
-  // dan is dat net zo goed een verschil met PROD.
+  // In ontwikkeling is wat in TST of ACC nieuwer is dan in PROD, of er niet mee
+  // te vergelijken valt. Een ouder versie telt niet (die omgeving loopt achter),
+  // en een model dat er niet draait ook niet: dat is geen werk, en het verschil
+  // zit dan al in de ouder die het (niet) aanroept. Alleen een hoofdmodel dat
+  // nog niet in PROD staat, is nieuw.
+  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het
+  // één keer. Interfaces tellen mee: een andere interfaceversie is ook een verschil.
+  const isWortel = n => chain.wortel !== undefined && n.nodeKey === chain.wortel
+  const verschil = (n, env) => {
+    const v = n.versions[env], p = n.versions.PROD
+    if (v && p) return ['voor', 'anders'].includes(versieStatus(v, p))
+    return Boolean(v) && !p && isWortel(n)
+  }
   const afwijkend = env => [...new Set(chain.nodes
-    .filter(n => n.versions[env] !== n.versions.PROD)
+    .filter(n => verschil(n, env))
     .map(n => n.modelId ?? n.label))]
   const tstNewer  = afwijkend('TST')
   const accNewer  = afwijkend('ACC')
+  // Omgevingen waar de keten (nog) niet draait: het hoofdmodel heeft er geen versie
+  const wortelNode = chain.nodes.find(isWortel)
+  const nietIn = wortelNode ? ENVS.filter(e => !wortelNode.versions[e]) : []
   // Alleen werk aan wat nog onderweg is: een node die in TST of ACC afwijkt van
   // PROD. Werk aan een versie die overal al draait, is klaar en zegt niets meer.
-  const onderweg  = n => n.versions.TST !== n.versions.PROD || n.versions.ACC !== n.versions.PROD
+  const onderweg  = n => verschil(n, 'TST') || verschil(n, 'ACC')
   const workItems = [...new Map(chain.nodes.filter(n => n.workItem && onderweg(n))
     .map(n => [n.workItem.id, { model: n.label, ...n.workItem }])).values()]
 
@@ -234,5 +253,5 @@ export function chainStats(chain) {
   else if (accNewer.length > 0) status = 'KLAAR_VOOR_PROD'
   else if (tstNewer.length > 0) status = 'IN_ONTWIKKELING'
 
-  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, workItems, status }
+  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, nietIn, workItems, status }
 }

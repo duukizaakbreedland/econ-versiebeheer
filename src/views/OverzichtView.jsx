@@ -66,6 +66,12 @@ function ChainCard({ chainId, chain, onClick }) {
       {/* Footer stats */}
       <div className="flex items-center gap-3 text-xs text-meta mt-auto pt-2 border-t border-line/50">
         <span>{totalModels} modellen</span>
+        {stats.nietIn.length > 0 && (
+          <>
+            <span className="text-ink-4">·</span>
+            <span className="text-ink-3">niet in {stats.nietIn.join(' en ')}</span>
+          </>
+        )}
         {diffModels > 0 && (
           <>
             <span className="text-ink-4">·</span>
