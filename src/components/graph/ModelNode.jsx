@@ -98,13 +98,17 @@ export default function ModelNode({ data, selected }) {
             display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
               background: klaar ? 'var(--ink-3)' : ENV.TST.ink }} />
-            <span style={{ color: klaar ? 'var(--ink-2)' : ENV.TST.ink, fontSize: 9, fontWeight: 600 }}>
-              {data.workItem.consultant}
+            {/* Ticket en beschrijving; zonder ticket de consultant, zodat je weet bij wie je moet zijn */}
+            <span style={{ color: klaar ? 'var(--ink-2)' : ENV.TST.ink, fontSize: 9, fontWeight: 600,
+              fontFamily: data.workItem.ticket ? 'var(--mono)' : undefined, flexShrink: 0 }}>
+              {data.workItem.ticket || data.workItem.consultant}
             </span>
-            <span style={{ color: 'var(--meta-ink)', fontSize: 9,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              — {data.workItem.note}
-            </span>
+            {data.workItem.note && (
+              <span title={data.workItem.note} style={{ color: 'var(--meta-ink)', fontSize: 9,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                — {data.workItem.note}
+              </span>
+            )}
           </div>
         )
       })()}

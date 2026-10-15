@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { fetchReleases, updateDeploymentLog } from '../lib/api.js'
 import { InlineEdit, Banner } from '../components/ui/index.jsx'
 import { ENV } from '../lib/kleuren.js'
@@ -7,6 +7,27 @@ const ENV_CFG = {
   PROD: { color: ENV.PROD.ink, bg: ENV.PROD.bg, border: ENV.PROD.line },
   ACC:  { color: ENV.ACC.ink,  bg: ENV.ACC.bg,  border: ENV.ACC.line  },
   TST:  { color: ENV.TST.ink,  bg: ENV.TST.bg,  border: ENV.TST.line  },
+}
+
+// Alles waarop je een release kunt terugvinden: de modellen (ook die waarvan
+// alleen de aanroep is omgezet), ticket, tester, omgeving en de datum in de
+// vormen waarin je hem intikt (14-10, 14-10-2026, 2026-10-14, 14 okt).
+function zoektekst(log) {
+  const d = new Date(log.deployed_at)
+  const p = n => String(n).padStart(2, '0')
+  const dag = p(d.getDate()), maand = p(d.getMonth() + 1), jaar = String(d.getFullYear())
+  const datums = [
+    `${dag}-${maand}-${jaar}`, `${dag}-${maand}-${jaar.slice(2)}`, `${d.getDate()}-${d.getMonth() + 1}-${jaar}`,
+    `${jaar}-${maand}-${dag}`, `${dag}/${maand}/${jaar}`,
+    d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }),
+    d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }),
+  ]
+  const modellen = [
+    ...(log.deployment_log_versions ?? []).map(v => `${v.model_versions?.models?.name} ${v.model_versions?.version}`),
+    ...(log.deployment_log_dependencies ?? []).flatMap(k => [k.parent?.models?.name, k.child?.name]),
+  ]
+  return [...datums, ...modellen, log.ticket, log.tested_by, log.environments?.name]
+    .filter(Boolean).join(' | ').toLowerCase()
 }
 
 function formatDate(iso) {
@@ -34,7 +55,7 @@ function LogEntry({ log, onChanged, onError }) {
   return (
     <div className={`bg-card border border-line rounded-xl overflow-hidden ${busy ? 'opacity-60' : ''}`}>
       <div className="px-4 py-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
           <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
             style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
             {env}
@@ -43,6 +64,11 @@ function LogEntry({ log, onChanged, onError }) {
           <span className="text-xs">
             <InlineEdit value={log.ticket} placeholder="ticket" mono textClass="text-ink-2"
               onSave={v => run(() => updateDeploymentLog({ id: log.id, ticket: v }))} />
+          </span>
+          <span className="text-xs flex items-center gap-1">
+            <span className="text-ink-3">getest door</span>
+            <InlineEdit value={log.tested_by} placeholder="—" textClass="text-ink-2"
+              onSave={v => run(() => updateDeploymentLog({ id: log.id, testedBy: v }))} />
           </span>
           <span className="ml-auto text-ink-3 text-xs flex-shrink-0">
             {deployed.length > 0 || aanroepen.length === 0
@@ -131,6 +157,15 @@ export default function ReleaseView() {
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState(null)
   const [actionErr, setActionErr] = useState(null)
+  const [zoek,      setZoek]      = useState('')
+
+  // Elk woord moet ergens in de release voorkomen: "subkader okt" vindt de
+  // releases met SubKaderModel in oktober
+  const zichtbaar = useMemo(() => {
+    const termen = zoek.toLowerCase().split(/\s+/).filter(Boolean)
+    if (!logs || termen.length === 0) return logs
+    return logs.filter(log => { const t = zoektekst(log); return termen.every(w => t.includes(w)) })
+  }, [logs, zoek])
 
   function load() {
     setLoading(true)
@@ -174,6 +209,21 @@ export default function ReleaseView() {
           </button>
         </div>
 
+        <div className="relative mb-4 max-w-xs">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-meta"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="Zoek op model, datum of ticket…"
+            value={zoek}
+            onChange={e => setZoek(e.target.value)}
+            className="w-full bg-card border border-line rounded-lg pl-9 pr-3 py-2 text-ink
+                       text-sm focus:outline-none focus:border-accent placeholder-ink-3"
+          />
+        </div>
+
         {actionErr && (
           <div className="mb-3">
             <Banner ok={false} onClose={() => setActionErr(null)}>{actionErr}</Banner>
@@ -184,9 +234,13 @@ export default function ReleaseView() {
           <div className="text-center py-16 text-ink-3 text-sm">
             Nog geen releases geregistreerd
           </div>
+        ) : zichtbaar?.length === 0 ? (
+          <div className="text-center py-16 text-ink-3 text-sm">
+            Geen releases gevonden voor "{zoek}"
+          </div>
         ) : (
           <div className="space-y-2">
-            {logs?.map(log => (
+            {zichtbaar?.map(log => (
               <LogEntry key={log.id} log={log}
                 onChanged={() => { setActionErr(null); return load() }}
                 onError={setActionErr} />

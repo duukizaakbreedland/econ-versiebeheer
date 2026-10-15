@@ -215,13 +215,18 @@ export function ketenOpgelost(chain, deps = []) {
 // Stats per keten voor het overzicht; geef een keten uit ketenOpgelost() mee
 export function chainStats(chain) {
   const models    = chain.nodes.filter(n => n.type === 'model')
-  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het één keer
-  const afwijkend = env => [...new Set(models
+  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het één keer.
+  // Interfaces tellen mee: roept een ouder in TST een andere interfaceversie aan,
+  // dan is dat net zo goed een verschil met PROD.
+  const afwijkend = env => [...new Set(chain.nodes
     .filter(n => n.versions[env] !== n.versions.PROD)
     .map(n => n.modelId ?? n.label))]
   const tstNewer  = afwijkend('TST')
   const accNewer  = afwijkend('ACC')
-  const workItems = [...new Map(chain.nodes.filter(n => n.workItem)
+  // Alleen werk aan wat nog onderweg is: een node die in TST of ACC afwijkt van
+  // PROD. Werk aan een versie die overal al draait, is klaar en zegt niets meer.
+  const onderweg  = n => n.versions.TST !== n.versions.PROD || n.versions.ACC !== n.versions.PROD
+  const workItems = [...new Map(chain.nodes.filter(n => n.workItem && onderweg(n))
     .map(n => [n.workItem.id, { model: n.label, ...n.workItem }])).values()]
 
   let status = 'STABIEL'

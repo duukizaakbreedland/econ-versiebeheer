@@ -26,7 +26,7 @@ function extraRegels({ workItem, sharedIn, ontbreekt }) {
 export function applyLayout(rawNodes, rawEdges, chainKey, shared) {
   const dataVan = n => ({
     label: n.label, versions: n.versions ?? {}, notes: n.notes,
-    workItem: n.workItem, modelId: n.modelId, nodeKey: n.nodeKey ?? n.id,
+    workItem: n.workItem, werkPerVersie: n.werkPerVersie, modelId: n.modelId, nodeKey: n.nodeKey ?? n.id,
     ontbreekt: n.ontbreekt ?? [],
     sharedIn: (shared[n.label] || []).filter(k => k !== chainKey),
   })

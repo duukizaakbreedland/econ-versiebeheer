@@ -11,6 +11,7 @@ export default function ChainPromoteForm({ nodes, onRefresh }) {
   const [open,   setOpen]   = useState(false)
   const [target, setTarget] = useState(canToAcc ? 'ACC' : 'PROD')
   const [ticket, setTicket] = useState('')
+  const [getestDoor, setGetestDoor] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg,    setMsg]    = useState(null)
 
@@ -24,11 +25,12 @@ export default function ChainPromoteForm({ nodes, onRefresh }) {
   ).length
 
   async function handlePromote() {
+    if (!ticket.trim() || !getestDoor.trim()) return
     setSaving(true); setMsg(null)
     try {
-      await promoteChain({ nodes, fromEnv, toEnv: target, ticket: ticket.trim() })
+      await promoteChain({ nodes, fromEnv, toEnv: target, ticket: ticket.trim(), testedBy: getestDoor.trim() })
       setMsg({ ok: true, text: `${diffCount} modellen gepromoveerd naar ${target}` })
-      setTicket(''); setOpen(false)
+      setTicket(''); setGetestDoor(''); setOpen(false)
       await onRefresh()
     } catch (e) {
       setMsg({ ok: false, text: e.message ?? 'Onbekende fout' })
@@ -72,10 +74,12 @@ export default function ChainPromoteForm({ nodes, onRefresh }) {
             )}
           </div>
           <div className="text-ink-3 text-xs">{diffCount} model{diffCount !== 1 ? 'len' : ''} worden meegenomen</div>
-          <input placeholder="Ticket (optioneel)" value={ticket} onChange={e => setTicket(e.target.value)}
+          <input placeholder="Ticket (verplicht)" value={ticket} onChange={e => setTicket(e.target.value)}
+            className="w-full bg-page border border-line rounded-lg px-3 py-1.5 text-ink text-xs focus:outline-none focus:border-accent placeholder-ink-3" />
+          <input placeholder="Getest door (verplicht)" value={getestDoor} onChange={e => setGetestDoor(e.target.value)}
             className="w-full bg-page border border-line rounded-lg px-3 py-1.5 text-ink text-xs focus:outline-none focus:border-accent placeholder-ink-3" />
           <div className="flex gap-2">
-            <button onClick={handlePromote} disabled={saving}
+            <button onClick={handlePromote} disabled={saving || !ticket.trim() || !getestDoor.trim()}
               className="flex-1 btn-ok text-xs font-medium rounded-lg px-3 py-1.5">
               {saving ? 'Bezig…' : `Naar ${target}`}
             </button>

@@ -29,7 +29,7 @@ function ActieKaart({ titel, subtitel, icon, open, onToggle, children }) {
   )
 }
 
-export default function NodeActions({ modelName, modelId, versions, aanroepers = [], onRefresh }) {
+export default function NodeActions({ modelName, modelId, versions, aanroepers = [], werkPerVersie = {}, onRefresh }) {
   const canToAcc  = versions.TST && versions.ACC  !== versions.TST
   const canToProd = versions.ACC && versions.PROD !== versions.ACC
   const canPromote = canToAcc || canToProd
@@ -43,6 +43,8 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
   const [cons,      setCons]      = useState(voornaam)
   const [note,      setNote]      = useState('')
   const [regTicket, setRegTicket] = useState('')
+  const [promTicket, setPromTicket] = useState(null)   // null = het ticket van het werk
+  const [getestDoor, setGetestDoor] = useState('')
   const [saving,    setSaving]    = useState(false)
   const [msg,       setMsg]       = useState(null)
 
@@ -73,12 +75,15 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
   async function handlePromote() {
     const fromEnv = target === 'ACC' ? 'TST' : 'ACC'
     const fromVer = target === 'ACC' ? versions.TST : versions.ACC
+    if (!ticket.trim() || !getestDoor.trim()) return
     setSaving(true); setMsg(null)
     try {
       await promoteModel({
         modelId, version: fromVer, vervangt: versions[target], fromEnv, toEnv: target, aanroepers,
+        ticket: ticket.trim(), testedBy: getestDoor.trim(),
       })
       setMsg({ ok: true, text: `${fromVer} gepromoveerd naar ${target}` })
+      setPromTicket(null); setGetestDoor('')
       setOpenKaart(null)
       await onRefresh()
     } catch (e) {
@@ -87,6 +92,8 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
   }
 
   const fromVer = target === 'ACC' ? versions.TST : versions.ACC
+  // Het ticket staat meestal al bij het werk aan deze versie; dat vullen we vast in
+  const ticket  = promTicket ?? werkPerVersie[fromVer]?.ticket ?? ''
   // Wie roept deze node in de doelomgeving aan? Die aanroep gaat om naar fromVer.
   const doelAanroepers = aanroepers.filter(a => a.versions[target])
 
@@ -157,8 +164,9 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
             </div>
             <div className="text-meta text-xs">
               <span className="font-mono text-ink">{fromVer}</span> gaat naar {target}
-              <span className="text-ink-3"> — het ticket komt mee uit het werk bij deze versie</span>
             </div>
+            <TextInput placeholder="Ticket (verplicht)" value={ticket} onChange={e => setPromTicket(e.target.value)} />
+            <TextInput placeholder="Getest door (verplicht)" value={getestDoor} onChange={e => setGetestDoor(e.target.value)} />
             {doelAanroepers.length > 0 && (
               <div className="text-meta text-xs">
                 Daarna roept{' '}
@@ -178,7 +186,8 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
               </div>
             )}
             <div className="flex gap-2 pt-0.5">
-              <Button variant="green" className="flex-1" onClick={handlePromote} disabled={saving}>
+              <Button variant="green" className="flex-1" onClick={handlePromote}
+                disabled={saving || !ticket.trim() || !getestDoor.trim()}>
                 {saving ? 'Bezig…' : `Naar ${target}`}
               </Button>
               <Button variant="ghost" onClick={() => toggle('promote')}>Annuleer</Button>

@@ -666,6 +666,7 @@ export default function DetailPanel({ node, chain, chainKey, chains, deps = [], 
             modelId={d.modelId}
             versions={d.versions}
             aanroepers={aanroepers}
+            werkPerVersie={d.werkPerVersie}
             onRefresh={handleChanged}
           />
         )}

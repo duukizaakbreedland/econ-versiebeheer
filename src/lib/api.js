@@ -129,7 +129,7 @@ export async function fetchReleases(orgSlug = 'buva') {
   const { data, error } = await supabase
     .from('deployment_logs')
     .select(`
-      id, deployed_at, ticket, notes,
+      id, deployed_at, ticket, tested_by, notes,
       environments ( name ),
       deployment_log_versions (
         role,
@@ -144,7 +144,7 @@ export async function fetchReleases(orgSlug = 'buva') {
     `)
     .in('environment_id', envs.map(e => e.id))
     .order('deployed_at', { ascending: false })
-    .limit(100)
+    .limit(1000)
 
   if (error) throw error
   return data
@@ -291,20 +291,28 @@ async function herkoppelAanroepers({ envId, childModelId, childVersionId, aanroe
 
   const { data: rijen, error } = await supabase
     .from('dependencies')
-    .select('id, parent: parent_version_id ( model_id, version )')
+    .select('id, child_version_id, parent: parent_version_id ( model_id, version )')
     .eq('environment_id', envId)
     .eq('child_model_id', childModelId)
   throwIf(error)
 
   const sleutels = new Set(aanroepers.map(a => `${a.modelId}|${a.version}`))
-  const teWijzigen = (rijen ?? []).filter(r => sleutels.has(`${r.parent?.model_id}|${r.parent?.version}`))
-  if (teWijzigen.length === 0) return
+  const teWijzigen = (rijen ?? []).filter(r =>
+    sleutels.has(`${r.parent?.model_id}|${r.parent?.version}`) && r.child_version_id !== childVersionId)
 
-  // De versie is net geregistreerd, dus hij bestaat: de ontbreekt-vlag vervalt
-  throwIf((await supabase
-    .from('dependencies')
-    .update({ child_version_id: childVersionId, child_missing_in_export: false })
-    .in('id', teWijzigen.map(r => r.id))).error)
+  // De versie is net geregistreerd, dus hij bestaat: de ontbreekt-vlag vervalt.
+  // Wat er stond onthouden we, zodat verwijderen van de nieuwe versie de aanroep
+  // terugzet in plaats van hem weg te gooien (zie deleteModelVersion).
+  for (const r of teWijzigen) {
+    throwIf((await supabase
+      .from('dependencies')
+      .update({
+        child_version_id:          childVersionId,
+        previous_child_version_id: r.child_version_id,
+        child_missing_in_export:   false,
+      })
+      .eq('id', r.id)).error)
+  }
 }
 
 // ─── Koppelingen van de vorige versie overnemen ───────────────────────────────
@@ -400,7 +408,11 @@ async function versieIds(modelIds) {
 // versies:     [{ naar, van }]  model_version-id's; van mag ontbreken
 // koppelingen: [{ parent_version_id, interface_version_id, child_model_id,
 //                 child_version_id, child_missing_in_export }]
-async function legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen }) {
+async function legPromotieVast({ toEnvId, toEnv, ticket, testedBy, versies, koppelingen }) {
+  // Elke release is herleidbaar: welk ticket, en wie heeft het getest
+  if (!ticket?.trim())   throw new Error('Vul een ticketnummer in')
+  if (!testedBy?.trim()) throw new Error('Vul in wie het heeft getest')
+
   // Wat stond er in de doelomgeving? Alleen echt gewijzigde koppelingen gaan om.
   const sleutel = k => `${k.parent_version_id}|${k.interface_version_id}|${k.child_model_id}`
   let oud = {}
@@ -423,7 +435,7 @@ async function legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen })
 
   const { data: log, error: logErr } = await supabase
     .from('deployment_logs')
-    .insert({ environment_id: toEnvId, ticket: ticket || null })
+    .insert({ environment_id: toEnvId, ticket: ticket.trim(), tested_by: testedBy.trim() })
     .select('id').single()
   throwIf(logErr)
 
@@ -472,7 +484,7 @@ async function legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen })
 // aanroepers zijn zijn ouders in de graph met hun versies per omgeving
 // ([{ modelId, versions }]): in toEnv gaan zij deze versie aanroepen. Wat de
 // versie zelf aanroept, komt mee uit fromEnv.
-export async function promoteModel({ modelId, version, vervangt, fromEnv, toEnv, aanroepers = [], orgSlug = 'buva' }) {
+export async function promoteModel({ modelId, version, vervangt, fromEnv, toEnv, aanroepers = [], ticket, testedBy, orgSlug = 'buva' }) {
   const [fromEnvId, toEnvId] = await Promise.all([getEnvId(fromEnv, orgSlug), getEnvId(toEnv, orgSlug)])
   const ids  = await versieIds([modelId, ...aanroepers.map(a => a.modelId)])
   const naar = ids[`${modelId}|${version}`]
@@ -507,16 +519,8 @@ export async function promoteModel({ modelId, version, vervangt, fromEnv, toEnv,
     })
   }
 
-  // Het ticket is al vastgelegd bij het werk dat aan deze versie hangt — daar
-  // halen we het op, in plaats van het bij elke promotie opnieuw te vragen.
-  const { data: wi } = await supabase
-    .from('work_items').select('ticket')
-    .eq('model_version_id', naar)
-    .not('ticket', 'is', null)
-    .limit(1)
-
   await legPromotieVast({
-    toEnvId, toEnv, ticket: wi?.[0]?.ticket ?? null,
+    toEnvId, toEnv, ticket, testedBy,
     versies: [{ naar, van: vervangt ? ids[`${modelId}|${vervangt}`] : null }],
     koppelingen,
   })
@@ -526,7 +530,7 @@ export async function promoteModel({ modelId, version, vervangt, fromEnv, toEnv,
 // nodes zijn de nodes uit de graph ([{ modelId, versions }]). Daarna loopt de
 // keten in toEnv precies zoals in fromEnv: elke node die verschilt wordt
 // gepromoveerd, en elke koppeling langs de keten gaat mee.
-export async function promoteChain({ nodes, fromEnv, toEnv, ticket, orgSlug = 'buva' }) {
+export async function promoteChain({ nodes, fromEnv, toEnv, ticket, testedBy, orgSlug = 'buva' }) {
   const [fromEnvId, toEnvId] = await Promise.all([getEnvId(fromEnv, orgSlug), getEnvId(toEnv, orgSlug)])
   const ids = await versieIds(nodes.map(n => n.modelId))
   const id  = (n, env) => ids[`${n.modelId}|${n.versions?.[env]}`]
@@ -546,7 +550,7 @@ export async function promoteChain({ nodes, fromEnv, toEnv, ticket, orgSlug = 'b
   throwIf(error)
   const koppelingen = (rijen ?? []).filter(r => inKeten.has(r.child_model_id))
 
-  await legPromotieVast({ toEnvId, toEnv, ticket, versies, koppelingen })
+  await legPromotieVast({ toEnvId, toEnv, ticket, testedBy, versies, koppelingen })
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -604,6 +608,21 @@ export async function deleteModelVersion(modelVersionId) {
     throw new Error('Deze versie zit in een release. Draai die eerst terug bij Promoties.')
   }
 
+  // Aanroepen naar deze versie vallen terug op de versie die er vóór de
+  // registratie stond. Zonder vorige versie neemt de cascade ze mee.
+  const { data: aanroepen, error: aanErr } = await supabase
+    .from('dependencies')
+    .select('id, previous_child_version_id')
+    .eq('child_version_id', modelVersionId)
+    .not('previous_child_version_id', 'is', null)
+  throwIf(aanErr)
+  for (const r of aanroepen ?? []) {
+    throwIf((await supabase
+      .from('dependencies')
+      .update({ child_version_id: r.previous_child_version_id, previous_child_version_id: null })
+      .eq('id', r.id)).error)
+  }
+
   const { error } = await supabase.from('model_versions').delete().eq('id', modelVersionId)
   throwIf(error)
 }
@@ -644,10 +663,11 @@ export async function deleteWorkItem(id) {
 }
 
 // Ticket of notitie van een release achteraf aanvullen
-export async function updateDeploymentLog({ id, ticket, notes }) {
+export async function updateDeploymentLog({ id, ticket, testedBy, notes }) {
   const patch = {}
-  if (ticket !== undefined) patch.ticket = ticket || null
-  if (notes  !== undefined) patch.notes  = notes || null
+  if (ticket   !== undefined) patch.ticket    = ticket || null
+  if (testedBy !== undefined) patch.tested_by = testedBy || null
+  if (notes    !== undefined) patch.notes     = notes || null
   const { error } = await supabase.from('deployment_logs').update(patch).eq('id', id)
   throwIf(error)
 }
