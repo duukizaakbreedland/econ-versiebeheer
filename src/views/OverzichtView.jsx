@@ -46,6 +46,23 @@ function ChainCard({ chainId, chain, onClick }) {
         </span>
       </div>
 
+      {/* Opmerkingen: hier moet iets mee gebeuren */}
+      {stats.opmerkingen.length > 0 && (
+        <div className="space-y-1 mb-3">
+          {stats.opmerkingen.map(o => (
+            <div key={o.model} className="flex items-start gap-1.5 text-xs rounded-md px-2 py-1"
+              style={{ background: ORANJE.bg, color: ORANJE.ink }} title={`${o.model}: ${o.tekst}`}>
+              <svg className="w-3 h-3 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="min-w-0 line-clamp-2">
+                <span className="font-semibold">{o.model}</span> — {o.tekst}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Werk in uitvoering */}
       {workItems.length > 0 && (
         <div className="space-y-1 mb-3 flex-1">

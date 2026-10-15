@@ -91,6 +91,20 @@ export default function ModelNode({ data, selected }) {
         </div>
       )}
 
+      {/* Opmerking bij het model: er moet iets mee gebeuren */}
+      {data.notes?.trim() && (
+        <div title={data.notes} style={{ borderTop: `1px solid ${ORANJE.line}`, padding: '4px 10px 5px',
+          background: ORANJE.bg, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={ORANJE.ink} strokeWidth="2.5" style={{ flexShrink: 0 }}>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          <span style={{ color: ORANJE.ink, fontSize: 9, fontWeight: 600,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {data.notes.trim()}
+          </span>
+        </div>
+      )}
+
       {data.workItem && (() => {
         const klaar = data.workItem.status === 'DONE'
         return (

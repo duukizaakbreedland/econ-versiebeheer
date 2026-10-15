@@ -261,10 +261,14 @@ export function chainStats(chain) {
   const workItems = [...new Map(chain.nodes.filter(n => n.workItem && onderweg(n))
     .map(n => [n.workItem.id, { model: n.label, ...n.workItem }])).values()]
 
+  // Een opmerking bij een model betekent: hier moet iets mee gebeuren
+  const opmerkingen = [...new Map(chain.nodes.filter(n => n.notes?.trim())
+    .map(n => [n.modelId ?? n.label, { model: n.label, tekst: n.notes.trim() }])).values()]
+
   let status = 'STABIEL'
   if (tstNewer.length > 0 && accNewer.length > 0) status = 'ACTIEF'
   else if (accNewer.length > 0) status = 'KLAAR_VOOR_PROD'
   else if (tstNewer.length > 0) status = 'IN_ONTWIKKELING'
 
-  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, nietIn, workItems, status }
+  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, nietIn, workItems, opmerkingen, status }
 }

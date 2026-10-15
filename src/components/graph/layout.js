@@ -13,8 +13,9 @@ function modelHeight(extras) {
   return MODEL_H + extras * ROW_H
 }
 
-function extraRegels({ workItem, sharedIn, ontbreekt }) {
+function extraRegels({ workItem, sharedIn, ontbreekt, notes }) {
   let n = 0
+  if (notes?.trim()) n++
   if (workItem) n++
   if (sharedIn?.length > 0) n++
   if (ontbreekt?.length > 0) n++

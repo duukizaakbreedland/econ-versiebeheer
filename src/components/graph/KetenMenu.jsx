@@ -105,6 +105,12 @@ export default function KetenMenu({ chains, deps = [], actief, onKies }) {
                 <span className={`text-xs truncate ${gekozen ? 'text-ink font-semibold' : 'text-ink'}`}>
                   {chain.label}
                 </span>
+                {stats.opmerkingen.length > 0 && (
+                  <svg className="w-3 h-3 shrink-0 text-mid" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <title>{stats.opmerkingen.map(o => `${o.model}: ${o.tekst}`).join('\n')}</title>
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                )}
                 <span className="ml-auto text-ink-3 text-xs shrink-0">{stats.models}</span>
               </div>
               {modelRaak.length > 0 && (
