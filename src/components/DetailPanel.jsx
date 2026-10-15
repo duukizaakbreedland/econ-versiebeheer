@@ -1,33 +1,24 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { versieStatus, statusSamenvatting, vergelijkVersies } from '../lib/chainUtils.js'
-import {
-  updateModel, updateWorkItem, addWorkItem, fetchModelVersions,
-  deleteModelVersion, fetchPromotiesVoorModel, rollbackDeployment, deleteDependency,
-  fetchModels, legKoppelingVast,
-} from '../lib/api.js'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { versieStatus, statusSamenvatting, ENVS, STATUS_TEKEN } from '../lib/chainUtils.js'
+import { promotieRichtingen, datum, STATUS_LABEL } from '../lib/releasePlan.js'
+import { updateModel, updateWorkItem, addWorkItem, deleteWorkItem, removeDependency } from '../lib/api.js'
+import { useSnapshot } from '../hooks/useSnapshot.jsx'
 import { useVoornaam } from '../lib/auth.jsx'
-import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput } from './ui/index.jsx'
-import NodeActions from './NodeActions.jsx'
+import { Section, Banner, InlineEdit, ConfirmButton, Select, Button, TextInput, EnvChip, Chip, Leeg, useToast } from './ui/index.jsx'
+import { RegistreerDialoog, PromoveerDialoog, AanroepDialoog, TerugdraaiDialoog, VerwijderDialoog, statusBijEnvs } from './dialogen.jsx'
 import { ENV, GEEL, BLAUW, ORANJE, VIOLET, GRIJS, tint } from '../lib/kleuren.js'
 
-const ENV_ORDER = ['PROD', 'ACC', 'TST']
-const STATUS_LABEL = { IN_PROGRESS: 'In uitvoering', REVIEW: 'In review', DONE: 'Afgerond' }
-// De werk-kaart is verder neutraal; het bolletje draagt de status.
-const STATUS_KLEUR = {
-  IN_PROGRESS: { kleur: GEEL.ink },
-  REVIEW:      { kleur: BLAUW.ink },
-  DONE:        { kleur: GRIJS.ink },
-}
+const STATUS_KLEUR = { IN_PROGRESS: GEEL.ink, REVIEW: BLAUW.ink, DONE: GRIJS.ink }
 
 const MIN_W = 360
-const MAX_W = 680
+const MAX_W = 720
 const STORAGE_KEY = 'detailPanelWidth'
 
 // ─── Breedte onthouden + slepen ───────────────────────────────────────────────
 function useResizableWidth() {
   const [width, setWidth] = useState(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY))
-    return stored >= MIN_W && stored <= MAX_W ? stored : 440
+    return stored >= MIN_W && stored <= MAX_W ? stored : 460
   })
   const dragging = useRef(false)
 
@@ -41,8 +32,7 @@ function useResizableWidth() {
   useEffect(() => {
     function onMove(e) {
       if (!dragging.current) return
-      const next = Math.min(MAX_W, Math.max(MIN_W, window.innerWidth - e.clientX))
-      setWidth(next)
+      setWidth(Math.min(MAX_W, Math.max(MIN_W, window.innerWidth - e.clientX)))
     }
     function onUp() {
       if (!dragging.current) return
@@ -62,339 +52,173 @@ function useResizableWidth() {
   return { width, onMouseDown }
 }
 
-// ─── Samenvatting onder de omgevingslijst ─────────────────────────────────────
-// Eén regel die zegt hoe ver de nieuwste versie is doorgezet. De lijst erboven
-// toont de versies zelf al — dit vat alleen samen wat er nog open staat.
-function KetenSamenvatting({ versions }) {
-  const stappen = ['TST', 'ACC', 'PROD']
-  const nieuwste = [...stappen]
-    .map(e => versions[e])
-    .filter(Boolean)
-    .sort((a, b) => (vergelijkVersies(a, b) ?? 0))
-    .pop()
+// ─── Waar draait het ──────────────────────────────────────────────────────────
+const STATUS_TEKST = {
+  voor:   { tekst: 'nieuwer dan PROD', familie: GEEL },
+  achter: { tekst: 'ouder dan PROD',   familie: ORANJE },
+  anders: { tekst: 'wijkt af',         familie: VIOLET },
+}
 
-  if (!nieuwste) return null
+function EnvRow({ env, version, versionId, status, mistExport, snap }) {
+  const st = STATUS_TEKST[status]
+  const sinds = versionId ? snap.presentSince(versionId, env) : null
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-line first:border-t-0"
+      style={{ background: st ? st.familie.bg : 'transparent' }}>
+      <span className="text-xs font-bold w-11 shrink-0" style={{ color: ENV[env].ink }}>{env}</span>
+      <div className="min-w-0 flex items-center gap-2">
+        {version ? (
+          <span className="font-mono text-xs" style={{ color: st ? st.familie.ink : 'var(--ink)', fontWeight: st ? 700 : 400 }}>{version}</span>
+        ) : (
+          <span className="text-ink-4 text-xs italic">draait hier niet</span>
+        )}
+        {sinds && <span className="text-ink-3 text-[11px]" title={new Date(sinds).toLocaleString('nl-NL')}>sinds {datum(sinds)}</span>}
+      </div>
+      {mistExport && <span className="text-del text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>}
+      {st && <span className="text-xs shrink-0 ml-auto" style={{ color: st.familie.ink }}>{STATUS_TEKEN[status]} {st.tekst}</span>}
+    </div>
+  )
+}
 
-  const heeft = e => versions[e] && vergelijkVersies(versions[e], nieuwste) === 0
-  const achterstand = stappen.filter(e => !heeft(e))
-
+function KetenSamenvatting({ versions, isWortel }) {
+  const aanwezig = ENVS.filter(e => versions[e])
+  if (aanwezig.length === 0) return null
+  const nieuwste = ['TST', 'ACC', 'PROD'].map(e => versions[e]).filter(Boolean)
+    .sort((a, b) => (vergelijk(a, b) ?? 0)).pop()
+  const achterstand = ['TST', 'ACC', 'PROD'].filter(e => versions[e] !== nieuwste)
   return (
     <div className="text-meta text-xs mt-2">
       {achterstand.length === 0
         ? <>Overal <span className="font-mono text-ink">{nieuwste}</span></>
-        : <><span className="font-mono text-ink">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}</>}
+        : <><span className="font-mono text-ink">{nieuwste}</span> staat nog niet in {achterstand.join(' en ')}{!isWortel && ' (in deze keten)'}</>}
     </div>
   )
 }
+import { vergelijkVersies as vergelijk } from '../lib/versies.js'
 
-// ─── Omgevingsrij ─────────────────────────────────────────────────────────────
-
-const STATUS_TEKST = {
-  voor:   { tekst: '↑ nieuwer dan PROD', familie: GEEL },
-  achter: { tekst: '↓ ouder dan PROD',   familie: ORANJE },
-  anders: { tekst: '≠ wijkt af',         familie: VIOLET },
-}
-
-function EnvRow({ env, version, status, mistExport }) {
-  const color = ENV[env].ink
-  const st    = STATUS_TEKST[status]
-
-  return (
-    <div className="flex items-center gap-3 px-3 py-2 border-t border-line first:border-t-0"
-      style={{ background: st ? st.familie.bg : 'transparent' }}>
-      <span className="text-xs font-bold w-11 shrink-0" style={{ color }}>{env}</span>
-
-      <div className="min-w-0">
-        {version ? (
-          <span className="font-mono text-xs" style={{ color: st ? st.familie.ink : 'var(--ink)',
-            fontWeight: st ? 700 : 400 }}>
-            {version}
-          </span>
-        ) : (
-          <span className="text-ink-4 text-xs italic">niet actief</span>
-        )}
-      </div>
-
-      {mistExport && (
-        <span className="text-del text-xs shrink-0" title="Deze versie kwam niet voor in de eCon-export">⚠</span>
-      )}
-      {st && <span className="text-xs shrink-0 ml-auto" style={{ color: st.familie.ink }}>{st.tekst}</span>}
-    </div>
-  )
-}
-
-// ─── Eén werk-item, horend bij een versie ─────────────────────────────────────
-// Werk hangt aan de versie waarvoor het is gedaan en schuift daarmee mee naar
-// ACC en PROD. Zijn er meerdere versies in ontwikkeling, dan zijn er dus ook
-// meerdere werk-items — elk onder zijn eigen versie.
-function WerkRegel({ workItem, onChanged, onError }) {
+// ─── Werk ─────────────────────────────────────────────────────────────────────
+function WerkRegel({ w, onChanged, onError }) {
   const [busy, setBusy] = useState(false)
-
   async function run(fn) {
     setBusy(true)
     try { await fn(); await onChanged() }
     catch (e) { onError(e.message) }
     finally { setBusy(false) }
   }
-
-  const status = STATUS_KLEUR[workItem.status] ?? STATUS_KLEUR.IN_PROGRESS
-  const loopt  = workItem.status === 'IN_PROGRESS'
-
+  const loopt = w.status === 'IN_PROGRESS'
   return (
-    <div className={`bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5
-                     ${busy ? 'opacity-60' : ''}`}>
-      {/* Wie, wanneer, en hoe ver */}
+    <div className={`bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1 ${busy ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-2">
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${loopt ? 'animate-pulse' : ''}`}
-          style={{ background: status.kleur }} title={STATUS_LABEL[workItem.status]} />
-        <InlineEdit value={workItem.consultant} textClass="text-ink text-xs font-semibold"
-          onSave={v => run(() => updateWorkItem({ id: workItem.id, consultant: v }))} />
-        {workItem.createdAt && (
-          <span className="text-xs text-ink-3"
-            title={new Date(workItem.createdAt).toLocaleString('nl-NL')}>
-            {new Date(workItem.createdAt).toLocaleDateString('nl-NL',
-              { day: '2-digit', month: 'short', year: '2-digit' })}
-          </span>
-        )}
-        <div className="ml-auto">
-          <Select value={workItem.status}
-            onChange={e => run(() => updateWorkItem({ id: workItem.id, status: e.target.value }))}>
+          style={{ background: STATUS_KLEUR[w.status] }} title={STATUS_LABEL[w.status]} />
+        <InlineEdit value={w.consultant} textClass="text-ink text-xs font-semibold"
+          onSave={v => run(() => updateWorkItem({ id: w.id, consultant: v }))} />
+        <span className="font-mono text-ink-3 text-xs">{w.version}</span>
+        <span className="text-xs text-ink-3" title={new Date(w.createdAt).toLocaleString('nl-NL')}>{datum(w.createdAt)}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <Select value={w.status} onChange={e => run(() => updateWorkItem({ id: w.id, status: e.target.value }))}>
             {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
+          <ConfirmButton variant="ghost" confirmLabel="Weg?" onConfirm={() => run(() => deleteWorkItem(w.id))} title="Werk-item verwijderen">×</ConfirmButton>
         </div>
       </div>
-
-      {/* Gelabelde regels met een vaste labelbreedte, zodat ze uitlijnen */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-3 w-20 shrink-0">Ticket</span>
+        <InlineEdit value={w.ticket} placeholder="geen" mono textClass="text-ink"
+          onSave={v => run(() => updateWorkItem({ id: w.id, ticket: v }))} />
+      </div>
       <div className="flex items-start gap-2 text-xs">
         <span className="text-ink-3 w-20 shrink-0 pt-0.5">Omschrijving</span>
         <div className="min-w-0 flex-1">
-          <InlineEdit value={workItem.note} placeholder="geen" textClass="text-ink-2"
-            onSave={v => run(() => updateWorkItem({ id: workItem.id, description: v }))} />
+          <InlineEdit value={w.note} placeholder="geen" textClass="text-ink-2"
+            onSave={v => run(() => updateWorkItem({ id: w.id, description: v }))} />
         </div>
       </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Ticket</span>
-        <InlineEdit value={workItem.ticket} placeholder="geen" mono textClass="text-ink"
-          onSave={v => run(() => updateWorkItem({ id: workItem.id, ticket: v }))} />
-      </div>
-
     </div>
   )
 }
 
-// ─── Eén koppeling naar een submodel ──────────────────────────────────────────
-// Nu de tool leidend is, houd je koppelingen hier zelf bij: wijzigen (andere
-// interface- of submodelversie) en weghalen, per omgeving.
-function KoppelingRij({ dep, onWijzig, onVerwijder }) {
-  return (
-    <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs">
-        <span className="text-ink-3">via</span>
-        <span className="text-mov">{dep.ifaceName}</span>
-        <span className="font-mono text-ink-3">{dep.ifaceVersion}</span>
-        <span className="ml-auto flex gap-1">
-          <Button variant="ghost" onClick={onWijzig}>Wijzig</Button>
-          <ConfirmButton confirmLabel={`Weg uit ${dep.env}?`} onConfirm={onVerwijder}>Verwijder</ConfirmButton>
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-ink text-xs flex-1 min-w-0 truncate">{dep.childName}</span>
-        <span className="font-mono text-ink-2 text-xs shrink-0">{dep.childVersion}</span>
-      </div>
-    </div>
-  )
-}
+function WerkToevoegen({ versies, onChanged, onError }) {
+  const voornaam = useVoornaam()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [vid, setVid] = useState(versies[0]?.id ?? '')
+  const [cons, setCons] = useState(voornaam)
+  const [note, setNote] = useState('')
+  const [ticket, setTicket] = useState('')
+  const [status, setStatus] = useState(() => statusBijEnvs(versies[0]?.envs ?? []))
 
-// ─── Koppeling toevoegen of wijzigen ──────────────────────────────────────────
-// Deze node (de ouder) roept via een interface een submodel aan. Per omgeving
-// geldt de versie die de node daar draait. Bij wijzigen ligt het submodel vast.
-function KoppelingForm({ d, chainKey, standaardEnv, bestaand, deps, onKlaar, onAnnuleer }) {
-  const kanIn = e => Boolean(d.versions[e])
-  const [envs,        setEnvs]        = useState(() => ENV_ORDER.filter(e => e === standaardEnv && kanIn(e)))
-  const [modellen,    setModellen]    = useState([])
-  const [childId,     setChildId]     = useState(bestaand?.childModelId ?? '')
-  const [ifaceId,     setIfaceId]     = useState(bestaand?.ifaceModelId ?? '')
-  const [ifaceVersie, setIfaceVersie] = useState(bestaand?.ifaceVersion ?? '')
-  const [childVersie, setChildVersie] = useState(bestaand?.childVersion ?? '')
-  const [versies,     setVersies]     = useState({})   // modelId -> [versie]
-  const [busy,        setBusy]        = useState(false)
-  const [fout,        setFout]        = useState(null)
+  useEffect(() => { if (!versies.some(v => v.id === vid)) setVid(versies[0]?.id ?? '') }, [versies])
 
-  useEffect(() => { fetchModels().then(setModellen).catch(e => setFout(e.message)) }, [])
-
-  // Bestaande versies als suggestie bij het intikken
-  useEffect(() => {
-    for (const id of [childId, ifaceId]) {
-      if (!id || versies[id]) continue
-      fetchModelVersions(id)
-        .then(rows => setVersies(v => ({ ...v, [id]: rows.map(r => r.version) })))
-        .catch(() => {})
-    }
-  }, [childId, ifaceId])
-
-  // Nieuw submodel gekozen: neem interface en versies over van een bestaande
-  // aanroep ervan (bij voorkeur vanuit dit model), anders de interface "I<naam>"
-  function kiesSubmodel(id) {
-    setChildId(id)
-    const voorbeeld = deps.find(x => x.childModelId === id && x.parentModelId === d.modelId)
-      ?? deps.find(x => x.childModelId === id)
-    if (voorbeeld) {
-      setIfaceId(voorbeeld.ifaceModelId); setIfaceVersie(voorbeeld.ifaceVersion); setChildVersie(voorbeeld.childVersion)
-      return
-    }
-    const naam = modellen.find(m => m.id === id)?.name
-    const iface = modellen.find(m => m.type === 'INTERFACE' && m.name.toLowerCase() === `i${naam}`.toLowerCase())
-    setIfaceId(iface?.id ?? ''); setIfaceVersie(''); setChildVersie('')
-  }
-
-  async function opslaan() {
-    setBusy(true); setFout(null)
+  async function voegToe() {
+    if (!cons.trim() || !vid) return
+    setBusy(true)
     try {
-      await legKoppelingVast({
-        chainKey, parentModelId: d.modelId, parentNodeKey: d.nodeKey,
-        envs: envs.map(e => ({ env: e, parentVersion: d.versions[e] })),
-        ifaceModelId: ifaceId, ifaceVersion: ifaceVersie,
-        childModelId: childId, childVersion: childVersie,
-      })
-      await onKlaar()
-    } catch (e) { setFout(e.message) }
+      await addWorkItem({ modelVersionId: vid, consultant: cons.trim(), description: note.trim(), ticket: ticket.trim(), status })
+      setNote(''); setTicket(''); setOpen(false)
+      await onChanged()
+    } catch (e) { onError(e.message) }
     finally { setBusy(false) }
   }
 
-  const submodellen = modellen.filter(m => m.type === 'MODEL' && m.id !== d.modelId)
-  const interfaces  = modellen.filter(m => m.type === 'INTERFACE')
-  const klaar = envs.length > 0 && childId && ifaceId && ifaceVersie.trim() && childVersie.trim()
-
+  if (!open) return <Button variant="ghost" onClick={() => setOpen(true)} disabled={versies.length === 0}>+ Werk</Button>
   return (
-    <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-2">
-      <div className="text-ink-2 text-xs font-medium">{bestaand ? 'Koppeling wijzigen' : 'Koppeling toevoegen'}</div>
-      {fout && <Banner ok={false} onClose={() => setFout(null)}>{fout}</Banner>}
-
-      {/* In welke omgevingen; de ouderversie is die van deze node daar */}
-      <div className="flex items-center gap-1 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Omgeving</span>
-        {ENV_ORDER.map(e => {
-          const aan = envs.includes(e)
-          return (
-            <button key={e} disabled={!kanIn(e)}
-              title={kanIn(e) ? `${d.label} ${d.versions[e]}` : `${d.label} draait niet in ${e}`}
-              onClick={() => setEnvs(v => aan ? v.filter(x => x !== e) : [...v, e])}
-              className="px-1.5 py-0.5 font-bold rounded transition-colors disabled:opacity-30"
-              style={aan ? { background: ENV[e].bg, color: ENV[e].ink } : { color: 'var(--ink-3)' }}>
-              {e}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Submodel</span>
-        {bestaand ? (
-          <span className="text-ink">{bestaand.childName}</span>
-        ) : (
-          <Select className="flex-1" value={childId} onChange={e => kiesSubmodel(e.target.value)}>
-            <option value="">Kies een model…</option>
-            {submodellen.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </Select>
-        )}
-      </div>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Versie</span>
-        <TextInput list="koppeling-childversies" placeholder="bijv. 26.10.15" value={childVersie}
-          onChange={e => setChildVersie(e.target.value)} />
-        <datalist id="koppeling-childversies">
-          {(versies[childId] ?? []).map(v => <option key={v} value={v} />)}
-        </datalist>
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Interface</span>
-        <Select className="flex-1" value={ifaceId} onChange={e => { setIfaceId(e.target.value); setIfaceVersie('') }}>
-          <option value="">Kies een interface…</option>
-          {interfaces.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+    <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
+      <Select className="w-full" value={vid} onChange={e => { setVid(e.target.value); setStatus(statusBijEnvs(versies.find(v => v.id === e.target.value)?.envs ?? [])) }}>
+        {versies.map(v => <option key={v.id} value={v.id}>versie {v.version}{v.envs.length ? ` (${v.envs.join(', ')})` : ''}</option>)}
+      </Select>
+      <TextInput placeholder="Consultant" value={cons} onChange={e => setCons(e.target.value)} />
+      <TextInput placeholder="Ticket" value={ticket} onChange={e => setTicket(e.target.value)} />
+      <TextInput placeholder="Omschrijving (optioneel)" value={note} onChange={e => setNote(e.target.value)} />
+      <div className="flex items-center gap-2">
+        <Select className="flex-1" value={status} onChange={e => setStatus(e.target.value)}>
+          {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
-      </div>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-ink-3 w-20 shrink-0">Versie</span>
-        <TextInput list="koppeling-ifaceversies" placeholder="bijv. 25.03.06" value={ifaceVersie}
-          onChange={e => setIfaceVersie(e.target.value)} />
-        <datalist id="koppeling-ifaceversies">
-          {(versies[ifaceId] ?? []).map(v => <option key={v} value={v} />)}
-        </datalist>
-      </div>
-
-      <div className="flex gap-2 pt-0.5">
-        <Button variant="primary" className="flex-1" disabled={busy || !klaar} onClick={opslaan}>
-          {busy ? 'Opslaan…' : 'Opslaan'}
-        </Button>
-        <Button variant="ghost" onClick={onAnnuleer}>Annuleer</Button>
+        <Button variant="primary" disabled={busy || !cons.trim()} onClick={voegToe}>{busy ? 'Opslaan…' : 'Voeg toe'}</Button>
+        <Button variant="ghost" onClick={() => setOpen(false)}>Annuleer</Button>
       </div>
     </div>
   )
 }
 
-// ─── Koppelingen-sectie ───────────────────────────────────────────────────────
-// Bij een model: wie roept het aan, en wat roept het aan (met toevoegen,
-// wijzigen en weghalen). Bij een interface: welke ouder via deze interface welk
-// submodel aanroept, met weghalen.
-function KoppelingenSectie({ node, chain, chainKey, chains, deps, aanroepers = [], onChanged, onError }) {
-  const [env,     setEnv]     = useState('PROD')
-  const [bewerkt, setBewerkt] = useState(null)   // null | 'nieuw' | dep
+// ─── Aanroepen ────────────────────────────────────────────────────────────────
+function AanroepenSectie({ d, chainKey, ketens, snap, onChanged, onError, onWijzig, onNieuw }) {
+  const eerste = ['TST', 'ACC', 'PROD'].find(e => d.versions[e]) ?? 'TST'
+  const [env, setEnv] = useState(eerste)
+  const isIface = d.type === 'interface'
+  const versieId = d.versionIds[env]
 
-  // Koppeling weghalen in de gekozen omgeving; daarna laden graph en paneel opnieuw
+  const kinderen = !isIface && versieId ? snap.callsOf(env, versieId) : []
+  const ouders   = !isIface && versieId ? snap.callersOfVersion(versieId, env) : []
+  const viaIface = isIface && versieId ? snap.deps.filter(x => x.env === env && x.ifaceVersionId === versieId) : []
+
   async function verwijder(id) {
-    try { await deleteDependency(id); await onChanged() }
+    try { await removeDependency(id); await onChanged() }
     catch (e) { onError(e.message) }
   }
-
-  const d        = node.data
-  const isIface  = node.type === 'interface'
-  // Alleen de koppelingen van de versie die deze node in de keten heeft: een
-  // model kan in dezelfde keten op meerdere versies hangen
-  const versie   = d.versions[env]
-  const kinderen = isIface ? [] : deps.filter(x => x.env === env && x.parentModelId === d.modelId && x.parentVersion === versie)
-  const ouders   = isIface ? [] : deps.filter(x => x.env === env && x.childModelId  === d.modelId && x.childVersion  === versie)
-  // Interface: de aanroepen die via deze versie lopen, vanuit de ouder(s) in deze keten
-  const viaIface = !isIface ? [] : deps.filter(x => x.env === env &&
-    x.ifaceModelId === d.modelId && x.ifaceVersion === versie &&
-    aanroepers.some(a => a.modelId === x.parentModelId && a.versions?.[env] === x.parentVersion))
-  const isShared = d.sharedIn?.length > 0
-
-  // Terugval op de vaste ketenstructuur zolang er niets is vastgelegd
-  const structParents = chain.edges
-    .filter(e => e.target === d.nodeKey)
-    .map(e => chain.nodes.find(n => n.id === e.source))
-    .filter(Boolean)
-  const structChildren = chain.edges
-    .filter(e => e.source === d.nodeKey)
-    .map(e => chain.nodes.find(n => n.id === e.target))
-    .filter(Boolean)
-
-  const heeftKoppelingen = kinderen.length > 0 || ouders.length > 0
+  const ketenLabels = (envNaam, parentVersionId) => ketens.ketensVanVersie(envNaam, parentVersionId)
+    .map(k => snap.chain(k)?.label ?? k)
 
   return (
-    <Section title="Koppelingen"
+    <Section title="Aanroepen"
       right={
         <div className="flex gap-0.5">
-          {ENV_ORDER.map(e => (
-            <button key={e} onClick={() => setEnv(e)}
-              className="px-1.5 py-0.5 text-xs font-bold rounded transition-colors"
-              style={env === e
-                ? { background: ENV[e].bg, color: ENV[e].ink }
-                : { color: 'var(--ink-3)' }}>
+          {ENVS.map(e => (
+            <button key={e} onClick={() => setEnv(e)} disabled={!d.versions[e]}
+              className="px-1.5 py-0.5 text-xs font-bold rounded transition-colors disabled:opacity-30"
+              style={env === e ? { background: ENV[e].bg, color: ENV[e].ink } : { color: 'var(--ink-3)' }}>
               {e}
             </button>
           ))}
         </div>
       }>
       <div className="space-y-3">
-        {isIface && (
+        {!versieId && <Leeg>{d.label} draait niet in {env}.</Leeg>}
+
+        {isIface && versieId && (
           <div>
-            <div className="text-ink-3 text-xs mb-1">Aanroepen via {d.label} {versie ?? ''}</div>
-            {viaIface.length === 0 && (
-              <div className="text-ink-3 text-xs">Geen aanroepen via deze interface in {env}.</div>
-            )}
+            <div className="text-ink-3 text-xs mb-1">Aanroepen via {d.label} {d.versions[env]} in {env}</div>
+            {viaIface.length === 0 && <Leeg>Geen aanroepen via deze interfaceversie in {env}.</Leeg>}
             {viaIface.map(k => (
               <div key={k.id} className="flex items-center gap-1.5 text-xs py-0.5">
                 <span className="text-ink-2 truncate">{k.parentName}</span>
@@ -402,459 +226,317 @@ function KoppelingenSectie({ node, chain, chainKey, chains, deps, aanroepers = [
                 <span className="text-ink-3">→</span>
                 <span className="text-ink truncate">{k.childName}</span>
                 <span className="font-mono text-ink-2">{k.childVersion}</span>
-                <span className="ml-auto">
-                  <ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(k.id)}>Verwijder</ConfirmButton>
-                </span>
+                <span className="ml-auto"><ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(k.id)}>Verwijder</ConfirmButton></span>
               </div>
             ))}
           </div>
         )}
 
-        {ouders.length > 0 && (
-          <div>
-            <div className="text-ink-3 text-xs mb-1">Wordt aangesproken door</div>
-            {ouders.map(o => (
-              <div key={o.id} className="flex items-center gap-2 text-xs py-0.5">
-                <span className="text-ink-3">↑</span>
-                <span className="text-ink-2 truncate">{o.parentName}</span>
-                <span className="font-mono text-ink-3">{o.parentVersion}</span>
-                <span className="ml-auto text-meta">
-                  als <span className="font-mono text-ink">{o.childVersion}</span>
-                </span>
-                <ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(o.id)}>
-                  Verwijder
-                </ConfirmButton>
+        {!isIface && versieId && (
+          <>
+            <div>
+              <div className="text-ink-3 text-xs mb-1">{d.label} {d.versions[env]} roept aan</div>
+              {kinderen.length === 0 && <Leeg>Niets. {d.isWortel ? 'Leg hieronder vast wat het hoofdmodel aanroept.' : ''}</Leeg>}
+              <div className="space-y-1.5">
+                {kinderen.map(k => (
+                  <div key={k.id} className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-ink flex-1 min-w-0 truncate">{k.childName}</span>
+                      <span className="font-mono text-ink shrink-0">{k.childVersion}</span>
+                      {k.ontbreekt && <span className="text-del" title="Deze versie kwam niet voor in de eCon-export">⚠</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs mt-0.5">
+                      <span className="text-ink-3">via</span>
+                      <span className="text-mov">{k.ifaceName}</span>
+                      <span className="font-mono text-ink-3">{k.ifaceVersion}</span>
+                      <span className="ml-auto flex gap-1">
+                        <Button variant="ghost" onClick={() => onWijzig(env, k)}>Wijzig</Button>
+                        <ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(k.id)}>Verwijder</ConfirmButton>
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-
-        {kinderen.length > 0 && (
-          <div>
-            <div className="text-ink-3 text-xs mb-1">Spreekt aan</div>
-            <div className="space-y-1.5">
-              {kinderen.map(k => bewerkt?.id === k.id ? (
-                <KoppelingForm key={k.id} d={d} chainKey={chainKey} standaardEnv={env} bestaand={k} deps={deps}
-                  onKlaar={async () => { setBewerkt(null); await onChanged() }} onAnnuleer={() => setBewerkt(null)} />
-              ) : (
-                <KoppelingRij key={k.id} dep={k} onWijzig={() => setBewerkt(k)} onVerwijder={() => verwijder(k.id)} />
-              ))}
+              <Button variant="ghost" className="mt-1.5" onClick={() => onNieuw(env)}>+ Aanroep toevoegen</Button>
             </div>
-          </div>
-        )}
 
-        {!isIface && !heeftKoppelingen && (structParents.length > 0 || structChildren.length > 0) && (
-          <div>
-            <div className="text-ink-3 text-xs mb-1">
-              Nog niets vastgelegd voor {env} — vaste ketenstructuur
+            <div>
+              <div className="text-ink-3 text-xs mb-1">Wordt in {env} aangeroepen door</div>
+              {ouders.length === 0 && <Leeg>{d.isWortel ? 'Niemand: dit is het hoofdmodel.' : `Niemand roept ${d.versions[env]} aan in ${env}.`}</Leeg>}
+              {ouders.map(o => {
+                const labels = ketenLabels(env, o.parentVersionId)
+                return (
+                  <div key={o.id} className="flex items-center gap-2 text-xs py-0.5">
+                    <span className="text-ink-3">↑</span>
+                    <span className="text-ink-2 truncate">{o.parentName}</span>
+                    <span className="font-mono text-ink-3">{o.parentVersion}</span>
+                    <span className="text-ink-3 truncate" title={labels.join(', ')}>
+                      {labels.length ? `· ${labels.join(', ')}` : '· niet in een keten in gebruik'}
+                    </span>
+                    <span className="ml-auto"><ConfirmButton confirmLabel={`Weg uit ${env}?`} onConfirm={() => verwijder(o.id)}>Verwijder</ConfirmButton></span>
+                  </div>
+                )
+              })}
             </div>
-            {structParents.map(p => (
-              <div key={p.id} className="flex items-center gap-2 text-xs text-ink-2 py-0.5">
-                <span className="text-ink-3">↑</span> {p.label}
-              </div>
-            ))}
-            {structChildren.map(c => (
-              <div key={c.id} className="flex items-center gap-2 text-xs text-ink-2 py-0.5">
-                <span className="text-ink-3">↓</span> {c.label}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Een nieuwe aanroep vanuit deze node vastleggen */}
-        {!isIface && (bewerkt === 'nieuw' ? (
-          <KoppelingForm d={d} chainKey={chainKey} standaardEnv={env} deps={deps}
-            onKlaar={async () => { setBewerkt(null); await onChanged() }} onAnnuleer={() => setBewerkt(null)} />
-        ) : (
-          <Button variant="ghost" disabled={!ENV_ORDER.some(e => d.versions[e])} onClick={() => setBewerkt('nieuw')}>
-            + Koppeling toevoegen
-          </Button>
-        ))}
-
-        {isShared && (
-          <div className="bg-cond-bg border border-cond-bg-2 rounded-lg p-2.5">
-            <div className="text-cond text-xs font-semibold mb-1">Ook gebruikt in</div>
-            {d.sharedIn.map(k => (
-              <div key={k} className="flex items-center gap-2 text-xs text-cond py-0.5">
-                <span className="text-cond">•</span> {chains[k]?.label || k}
-              </div>
-            ))}
-          </div>
+          </>
         )}
       </div>
     </Section>
   )
 }
 
-// ─── Promoties van dit model, met terugdraaien ────────────────────────────────
-// Alleen promoties waarin een versie van deze node in- of uitging; die van
-// versies die elders draaien horen bij die andere plek.
-function PromotieSectie({ modelId, versies, refreshKey, onChanged, onError }) {
-  const [rijen, setRijen] = useState(null)
-  const [busy,  setBusy]  = useState(false)
-
-  useEffect(() => {
-    let weg = false
-    fetchPromotiesVoorModel(modelId)
-      .then(r => { if (!weg) setRijen(r) })
-      .catch(e => onError(e.message))
-    return () => { weg = true }
-  }, [modelId, refreshKey])
-
-  const hier = (rijen ?? []).filter(p => versies.includes(p.naar) || versies.includes(p.van))
-  if (hier.length === 0) return null
-
-  async function draaiTerug(logId) {
-    setBusy(true)
-    try { await rollbackDeployment({ logId }); await onChanged() }
-    catch (e) { onError(e.message) }
-    finally { setBusy(false) }
+// ─── Waar gebruikt: alle aanroepers, over alle ketens en omgevingen ───────────
+function WaarGebruikt({ d, snap, ketens, chainKey, ga }) {
+  const alle = snap.callersOf(d.modelId)
+  if (alle.length === 0) return null
+  const perVersie = {}
+  for (const x of alle) {
+    const k = x.childVersion
+    const p = (perVersie[k] ??= {})
+    const key = `${x.parentModelId}|${x.parentVersion}`
+    ;(p[key] ??= { parent: `${x.parentName} ${x.parentVersion}`, parentModelId: x.parentModelId, envs: new Set(), ketens: new Set() }).envs.add(x.env)
+    for (const kk of ketens.ketensVanVersie(x.env, x.parentVersionId)) p[key].ketens.add(kk)
   }
-
+  const versies = Object.keys(perVersie).sort((a, b) => (vergelijk(b, a) ?? 0))
   return (
-    <Section title="Promoties">
-      <div className="space-y-1">
-        {hier.slice(0, 5).map(p => (
-          <div key={p.logId}
-            className="flex items-center gap-2 bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5">
-            <span className="text-xs font-bold shrink-0" style={{ color: ENV[p.env]?.ink }}>{p.env}</span>
-            {p.van && <span className="font-mono text-ink-3 text-xs line-through">{p.van}</span>}
-            <span className="text-ink-3 text-xs">→</span>
-            <span className="font-mono text-ink text-xs">{p.naar}</span>
-            <span className="text-ink-3 text-xs ml-auto shrink-0"
-              title={new Date(p.wanneer).toLocaleString('nl-NL')}>
-              {new Date(p.wanneer).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' })}
-            </span>
-            {p.terugTeDraaien && (
-              <ConfirmButton confirmLabel="Terugdraaien?" disabled={busy}
-                onConfirm={() => draaiTerug(p.logId)}>
-                Terug
-              </ConfirmButton>
-            )}
-          </div>
-        ))}
-      </div>
-      <p className="text-ink-3 text-xs mt-1.5">
-        Alleen de laatste promotie per omgeving is terug te draaien.
-      </p>
-    </Section>
-  )
-}
-
-// Werk dat je achteraf vastlegt hoort meestal al af te zijn: staat de versie al
-// in PROD, dan is het klaar; staat hij in ACC, dan ligt hij ter review.
-function statusBijEnvs(envs) {
-  if (envs.includes('PROD')) return 'DONE'
-  if (envs.includes('ACC'))  return 'REVIEW'
-  return 'IN_PROGRESS'
-}
-
-// ─── Eén versieregel, met werk toevoegen en terugnemen ────────────────────────
-function VersieRegel({ mv, envs, plekken, onChanged, onError }) {
-  const voornaam = useVoornaam()
-
-  const [busy,   setBusy]   = useState(false)
-  const [open,   setOpen]   = useState(false)
-  const [cons,   setCons]   = useState(voornaam)
-  const [note,   setNote]   = useState('')
-  const [ticket, setTicket] = useState('')
-  const [status, setStatus] = useState(() => statusBijEnvs(envs))
-
-  async function verwijder() {
-    setBusy(true)
-    try { await deleteModelVersion(mv.id); await onChanged() }
-    catch (e) { onError(e.message) }
-    finally { setBusy(false) }
-  }
-
-  async function voegWerkToe() {
-    if (!cons.trim()) return
-    setBusy(true)
-    try {
-      await addWorkItem({
-        modelVersionId: mv.id, consultant: cons.trim(),
-        description: note.trim(), ticket: ticket.trim(), status,
-      })
-      setNote(''); setTicket(''); setCons(voornaam); setOpen(false)
-      await onChanged()
-    } catch (e) { onError(e.message) }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <div className={busy ? 'opacity-60' : ''}>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="font-mono text-ink">{mv.version}</span>
-        <div className="flex gap-1">
-          {ENV_ORDER.filter(e => envs.includes(e)).map(e => (
-            <span key={e} className="px-1.5 rounded text-[10px] font-semibold"
-              style={{ background: ENV[e].bg, color: ENV[e].ink }}>
-              {e}
-            </span>
-          ))}
-        </div>
-        <span className="ml-auto text-ink-3">
-          {new Date(mv.created_at).toLocaleDateString('nl-NL',
-            { day: '2-digit', month: 'short', year: '2-digit' })}
-        </span>
-        <Button variant="ghost" disabled={busy} onClick={() => setOpen(o => !o)}>
-          {open ? 'Annuleer' : '+ Werk'}
-        </Button>
-        <ConfirmButton confirmLabel="Versie verwijderen?" disabled={busy} onConfirm={verwijder}>
-          Verwijder versie
-        </ConfirmButton>
-      </div>
-
-      {plekken && (
-        <div className="text-ink-3 text-xs mt-0.5">
-          {plekken.length > 0 ? <>Hangt onder {plekken.join(', ')}</> : 'Wordt nergens aangeroepen'}
-        </div>
-      )}
-
-      {(open || mv.werk.length > 0) && (
-        <div className="mt-1 space-y-1.5 pl-2 border-l border-line/60">
-          {open && (
-            <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 space-y-1.5">
-              <TextInput placeholder="Consultant" value={cons}
-                onChange={e => setCons(e.target.value)} />
-              <TextInput placeholder="Omschrijving (optioneel)" value={note}
-                onChange={e => setNote(e.target.value)} />
-              <TextInput placeholder="Ticket (optioneel)" value={ticket}
-                onChange={e => setTicket(e.target.value)} />
-              <div className="flex items-center gap-2">
-                <Select className="flex-1" value={status} onChange={e => setStatus(e.target.value)}>
-                  {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </Select>
-                <Button variant="primary" disabled={busy || !cons.trim()} onClick={voegWerkToe}>
-                  {busy ? 'Opslaan…' : 'Voeg toe'}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {mv.werk.map(w => (
-            <WerkRegel key={w.id} workItem={w} onChanged={onChanged} onError={onError} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Versies met het werk dat eraan hangt ─────────────────────────────────────
-// Gaat over déze node: welke versies draait hij hier, in deze keten. Hetzelfde
-// model kan elders op een andere versie hangen (SubProfielmodel draait onder
-// Profielmodel 26.02.16 op 26.03.25, onder 25.03.06 op 25.05.07HF); die versies
-// en het werk eraan horen niet bij deze node.
-function VersiesSectie({ modelId, versions, deps, refreshKey, onChanged, onError }) {
-  const [rows, setRows] = useState(null)
-  const [alles, setAlles] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    fetchModelVersions(modelId)
-      .then(r => { if (!cancelled) setRows(r) })
-      .catch(e => onError(e.message))
-    return () => { cancelled = true }
-  }, [modelId, refreshKey])
-
-  if (!rows) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Laden…</div></Section>
-  if (rows.length === 0) return <Section title="Versies en werk"><div className="text-ink-3 text-xs">Nog geen versies</div></Section>
-
-  const envsVan = mv => ENV_ORDER.filter(e => versions[e] === mv.version)
-
-  // Standaard alleen de versies die deze node hier draait. De rest hoort bij
-  // andere plekken waar het model hangt; ook als er werk aan hangt, is dat werk
-  // niet van deze node. Die versies staan onder "Toon ook", met waar ze wél hangen.
-  const hier   = rows.filter(r => envsVan(r).length > 0)
-  const elders = rows.filter(r => envsVan(r).length === 0)
-  const eldersMetWerk = elders.filter(r => r.werk.length > 0).length
-  const zichtbaar = alles ? [...hier, ...elders] : hier
-  const werkTotaal = hier.reduce((n, r) => n + r.werk.length, 0)
-
-  // Wie roept een versie aan, en in welke omgevingen?
-  const plekkenVan = mv => {
-    const per = {}
-    for (const x of deps) {
-      if (x.childModelId !== modelId || x.childVersion !== mv.version) continue
-      const k = `${x.parentName} ${x.parentVersion}`
-      ;(per[k] ??= []).push(x.env)
-    }
-    return Object.entries(per).map(([k, envs]) => `${k} (${ENV_ORDER.filter(e => envs.includes(e)).join(', ')})`)
-  }
-
-  return (
-    <Section title={`Versies en werk (${hier.length})`} collapsible defaultOpen>
-      {hier.length === 0 && !alles && (
-        <div className="text-ink-3 text-xs">Geen van de vastgelegde versies draait hier.</div>
-      )}
+    <Section title="Waar gebruikt" collapsible defaultOpen={false} count={versies.length}>
       <div className="space-y-2">
-        {zichtbaar.map(mv => (
-          <VersieRegel key={mv.id} mv={mv} envs={envsVan(mv)}
-            plekken={envsVan(mv).length === 0 ? plekkenVan(mv) : null}
-            onChanged={onChanged} onError={onError} />
+        {versies.map(v => (
+          <div key={v}>
+            <div className="text-xs mb-0.5"><span className="font-mono text-ink">{v}</span> <span className="text-ink-3">wordt aangeroepen door</span></div>
+            {Object.values(perVersie[v]).map(p => (
+              <div key={p.parent} className="flex items-center gap-2 text-xs py-0.5 pl-2">
+                <span className="text-ink-2 truncate">{p.parent}</span>
+                <span className="flex gap-0.5">{ENVS.filter(e => p.envs.has(e)).map(e => <EnvChip key={e} env={e} />)}</span>
+                <span className="ml-auto flex gap-1 flex-wrap justify-end">
+                  {[...p.ketens].length === 0 && <span className="text-ink-3">niet in een keten</span>}
+                  {[...p.ketens].map(k => (
+                    <button key={k} onClick={() => ga({ tab: 'ketens', keten: k, model: d.modelId })}
+                      className={`text-xs hover:underline ${k === chainKey ? 'text-ink-3' : 'text-mov'}`}>
+                      {snap.chain(k)?.label ?? k}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
         ))}
       </div>
+    </Section>
+  )
+}
 
-      {elders.length > 0 && (
-        <button onClick={() => setAlles(a => !a)}
-          className="text-meta hover:text-ink text-xs mt-2 transition-colors">
-          {alles
-            ? 'Toon alleen de versies van hier'
-            : `Toon ook ${elders.length} versie${elders.length !== 1 ? 's' : ''} van elders`
-              + (eldersMetWerk > 0 ? ` (${eldersMetWerk} met werk)` : '')}
-        </button>
-      )}
+// ─── Releases van dit model ───────────────────────────────────────────────────
+function ReleasesSectie({ d, snap, onTerug }) {
+  const mijn = snap.releases.filter(r => r.versions.some(v => v.modelId === d.modelId) || r.deps.some(k => k.childModelId === d.modelId))
+  if (mijn.length === 0) return null
+  const nieuwstePerEnv = {}
+  for (const r of mijn) if (!r.rolledBackAt && !nieuwstePerEnv[r.env]) nieuwstePerEnv[r.env] = r.id
+  return (
+    <Section title="Releases" count={mijn.length} collapsible defaultOpen>
+      <div className="space-y-1">
+        {mijn.slice(0, 6).map(r => {
+          const dep = r.versions.find(v => v.role === 'DEPLOYED' && v.modelId === d.modelId)
+          const rep = r.versions.find(v => v.role === 'REPLACED' && v.modelId === d.modelId)
+          const aan = r.deps.find(k => k.childModelId === d.modelId)
+          const terug = r.rolledBackAt
+          return (
+            <div key={r.id} className={`flex items-center gap-2 bg-card-2 border border-line/60 rounded-lg px-2.5 py-1.5 ${terug ? 'opacity-60' : ''}`}
+              title={terug ? `Teruggedraaid ${datum(r.rolledBackAt, true)} door ${r.rolledBackBy ?? '?'}: ${r.rollbackReason ?? ''}` : `${r.ticket ?? ''} · ${r.testedBy ?? ''} · door ${r.deployedBy ?? '?'}`}>
+              <span className="text-xs font-bold shrink-0" style={{ color: ENV[r.env]?.ink }}>{r.env}</span>
+              <span className={`font-mono text-xs ${terug ? 'line-through text-ink-3' : 'text-ink'}`}>
+                {(rep?.version ?? aan?.oldVersion) ? <><span className="text-ink-3 line-through">{rep?.version ?? aan?.oldVersion}</span> → </> : null}
+                {dep?.version ?? aan?.newVersion}
+              </span>
+              {r.ticket && <span className="font-mono text-ink-3 text-xs truncate">{r.ticket}</span>}
+              {terug && <span className="text-xs text-ink-3">teruggedraaid</span>}
+              <span className="text-ink-3 text-xs ml-auto shrink-0">{datum(r.deployedAt)}</span>
+              {nieuwstePerEnv[r.env] === r.id && (
+                <Button variant="ghost" onClick={() => onTerug(r)}>Terug</Button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <p className="text-ink-3 text-xs mt-1.5">Alleen de laatste release per omgeving is terug te draaien.</p>
+    </Section>
+  )
+}
 
-      <p className="text-ink-3 text-xs mt-2">
-        Werk hoort bij een versie en schuift daarmee mee naar ACC en PROD.
-        {werkTotaal === 0 && ' Met "+ Werk" hang je het alsnog aan een versie die er al staat.'}
-        {' '}Neem je een versie terug, dan valt de omgeving terug op de vorige.
-      </p>
+// ─── Alle versies ─────────────────────────────────────────────────────────────
+function VersiesSectie({ d, snap, onVerwijder }) {
+  const rows = snap.versionsOf(d.modelId)
+  const hier = new Set(Object.values(d.versionIds).filter(Boolean))
+  return (
+    <Section title="Alle versies" count={rows.length} collapsible defaultOpen={false}>
+      {rows.length === 0 && <Leeg>Nog geen versies</Leeg>}
+      <div className="space-y-1.5">
+        {rows.map(mv => {
+          const envs = snap.presentEnvs(mv.id)
+          const aanroepers = snap.callersOfVersion(mv.id)
+          const werk = snap.workOf(mv.id)
+          return (
+            <div key={mv.id} className={`text-xs rounded-lg px-2 py-1.5 border ${hier.has(mv.id) ? 'border-line bg-card-2' : 'border-line/40'}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-ink">{mv.version}</span>
+                <span className="flex gap-0.5">{envs.map(e => <EnvChip key={e} env={e} />)}</span>
+                {hier.has(mv.id) && <span className="text-ink-3">in deze keten</span>}
+                <span className="ml-auto text-ink-3" title={mv.createdBy ? `door ${mv.createdBy}` : ''}>{datum(mv.createdAt)}</span>
+                <ConfirmButton variant="ghost" confirmLabel="Verwijderen?" onConfirm={() => onVerwijder(mv.id)}>Verwijder</ConfirmButton>
+              </div>
+              <div className="text-ink-3 mt-0.5">
+                {aanroepers.length === 0 ? 'Wordt nergens aangeroepen' : `${aanroepers.length} aanroep${aanroepers.length === 1 ? '' : 'en'}`}
+                {werk.length > 0 && ` · ${werk.length} werk-item${werk.length === 1 ? '' : 's'}`}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </Section>
   )
 }
 
 // ─── Hoofdcomponent ───────────────────────────────────────────────────────────
-export default function DetailPanel({ node, chain, chainKey, chains, deps = [], aanroepers = [], onClose, onRefresh }) {
+export default function DetailPanel({ node, graaf, chainKey, ga, onClose }) {
+  const { snap, ketens, refresh } = useSnapshot()
+  const toast = useToast()
   const { width, onMouseDown } = useResizableWidth()
   const [err, setErr] = useState(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  if (!node) return null
+  const [dialoog, setDialoog] = useState(null)   // { soort, ... }
 
   const d = node.data
+  const isModel = d.type === 'model'
   const { label: statusLabel, familie: statusFamilie } = statusSamenvatting(d.versions)
-  const isShared = d.sharedIn?.length > 0
-  const isModel  = node.type === 'model'
+  const richting = promotieRichtingen(d)
+  const kanPromoveren = richting.ACC || richting.PROD
 
   async function handleChanged() {
     setErr(null)
-    setRefreshKey(k => k + 1)
-    await onRefresh()
+    await refresh()
   }
 
-  return (
-    <aside className="relative bg-card border-l border-line flex flex-col overflow-hidden shrink-0"
-      style={{ width }}>
+  // Werk aan de versies die deze node draait; "+ Werk" biedt die versies aan
+  const versiesHier = useMemo(() => {
+    const gezien = new Set()
+    return ['TST', 'ACC', 'PROD'].flatMap(e => {
+      const id = d.versionIds[e]
+      if (!id || gezien.has(id)) return []
+      gezien.add(id)
+      return [{ id, version: d.versions[e], envs: snap.presentEnvs(id) }]
+    })
+  }, [d, snap])
 
-      {/* Sleepgreep */}
+  // Esc sluit het paneel als er geen dialoog open is
+  useEffect(() => {
+    function opToets(e) { if (e.key === 'Escape' && !dialoog) onClose() }
+    document.addEventListener('keydown', opToets)
+    return () => document.removeEventListener('keydown', opToets)
+  }, [dialoog, onClose])
+
+  const sharedLabels = d.sharedIn ?? []
+
+  return (
+    <aside className="relative bg-card border-l border-line flex flex-col overflow-hidden shrink-0" style={{ width }}>
       <div onMouseDown={onMouseDown}
         className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/40 z-20 transition-colors"
         title="Sleep om de breedte aan te passen" />
 
-      {/* Vaste kop */}
+      {/* Kop */}
       <header className="px-4 pt-3 pb-3 border-b border-line bg-card">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             {isModel ? (
-              <InlineEdit
-                value={d.label}
-                textClass="text-ink font-bold text-sm"
+              <InlineEdit value={d.label} textClass="text-ink font-bold text-sm"
                 onSave={async next => {
                   if (!next) return
                   try { await updateModel({ modelId: d.modelId, name: next }); await handleChanged() }
                   catch (e) { setErr(e.message) }
-                }}
-              />
+                }} />
             ) : (
               <div className="text-ink font-bold text-sm leading-snug break-words">{d.label}</div>
             )}
             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={tint(statusFamilie)}>
-                {statusLabel}
-              </span>
-              <span className="text-meta text-xs">{isModel ? 'Model' : 'Interface'}</span>
-              {isShared && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={tint(VIOLET)}>
-                  Gedeeld
-                </span>
+              <Chip familie={statusFamilie}>{statusLabel}</Chip>
+              <span className="text-meta text-xs">{d.isWortel ? 'Hoofdmodel' : isModel ? 'Submodel' : 'Interface'}</span>
+              {sharedLabels.length > 0 && (
+                <Chip familie={VIOLET} title={`Ook gebruikt in: ${sharedLabels.join(', ')}`}>⧉ {sharedLabels.length} andere keten{sharedLabels.length === 1 ? '' : 's'}</Chip>
               )}
+              {d.variants > 1 && <Chip familie={VIOLET} title="Dit model hangt in deze keten op meerdere versies">×{d.variants} in deze keten</Chip>}
             </div>
           </div>
-          <button onClick={onClose}
-            className="text-ink-3 hover:text-ink text-xl leading-none transition-colors shrink-0">
-            ×
-          </button>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink text-xl leading-none transition-colors shrink-0" title="Sluiten (Esc)">×</button>
+        </div>
+        {/* Opmerking bij het model: hier moet iets mee */}
+        <div className="mt-2 text-xs">
+          <InlineEdit value={d.notes} multiline placeholder="Opmerking toevoegen…" textClass="text-ink-2 leading-relaxed"
+            onSave={async next => {
+              try { await updateModel({ modelId: d.modelId, notes: next }); await handleChanged() }
+              catch (e) { setErr(e.message) }
+            }} />
         </div>
       </header>
 
-      {/* Inhoud */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {err && <Banner ok={false} onClose={() => setErr(null)}>{err}</Banner>}
 
-        {/* Algemene opmerking — gaat over het model zelf, niet over een versie */}
-        <Section title="Opmerking">
-          <div className="bg-card-2 border border-line/60 rounded-lg px-2.5 py-2 text-xs">
-            <InlineEdit
-              value={d.notes}
-              multiline
-              placeholder="Opmerking toevoegen…"
-              textClass="text-ink leading-relaxed"
-              onSave={async next => {
-                try { await updateModel({ modelId: d.modelId, notes: next }); await handleChanged() }
-                catch (e) { setErr(e.message) }
-              }}
-            />
-          </div>
-        </Section>
-
-        {/* Versies zoals ze in deze keten worden aangeroepen */}
-        <Section title="Versies in deze keten">
+        <Section title="Waar draait het">
           <div className="bg-page rounded-lg border border-line/50 overflow-hidden">
-            {ENV_ORDER.map(naam => (
-              <EnvRow
-                key={naam}
-                env={naam}
-                version={d.versions[naam]}
+            {ENVS.map(naam => (
+              <EnvRow key={naam} env={naam} version={d.versions[naam]} versionId={d.versionIds[naam]} snap={snap}
                 status={naam === 'PROD' ? null : versieStatus(d.versions[naam], d.versions.PROD)}
-                mistExport={d.ontbreekt?.includes(naam)}
-              />
+                mistExport={d.ontbreekt?.includes(naam)} />
             ))}
           </div>
-          <KetenSamenvatting versions={d.versions} />
+          <KetenSamenvatting versions={d.versions} isWortel={d.isWortel} />
           {d.ontbreekt?.length > 0 && (
-            <div className="mt-2 text-xs text-del bg-del-bg border border-del-bg-2 rounded-lg px-2.5 py-2">
-              ⚠ Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export
-              van {d.ontbreekt.join(' en ')}.
-            </div>
+            <div className="mt-2"><Banner ok={false}>⚠ Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export van {d.ontbreekt.join(' en ')}.</Banner></div>
           )}
         </Section>
 
-        {/* Versies met het werk dat eraan hangt — wat er is gedaan, vóór wat je kunt doen */}
         {isModel && (
-          <VersiesSectie
-            modelId={d.modelId} versions={d.versions} deps={deps} refreshKey={refreshKey}
-            onChanged={handleChanged} onError={setErr}
-          />
+          <Section title="Acties">
+            <div className="grid grid-cols-1 gap-1.5">
+              <Button variant="primary" onClick={() => setDialoog({ soort: 'registreer' })}>Nieuwe versie registreren in TST</Button>
+              <Button variant="green" disabled={!kanPromoveren} onClick={() => setDialoog({ soort: 'promoveer' })}
+                title={kanPromoveren ? '' : 'TST, ACC en PROD draaien al dezelfde versie'}>
+                {richting.ACC ? `Promoveren ${d.versions.TST} naar ACC` : richting.PROD ? `Promoveren ${d.versions.ACC} naar PROD` : 'Promoveren (alles gelijk)'}
+              </Button>
+              {richting.ACC && richting.PROD && (
+                <Button variant="outline" onClick={() => setDialoog({ soort: 'promoveer', doel: 'PROD' })}>Promoveren {d.versions.ACC} naar PROD</Button>
+              )}
+              <Button variant="outline" disabled={!ENVS.some(e => d.versionIds[e])} onClick={() => setDialoog({ soort: 'aanroep', env: ['TST', 'ACC', 'PROD'].find(e => d.versionIds[e]) })}>
+                Aanroep toevoegen
+              </Button>
+            </div>
+          </Section>
         )}
 
-        {/* Wat je met dit model kunt doen */}
         {isModel && (
-          <NodeActions
-            modelName={d.label}
-            modelId={d.modelId}
-            versions={d.versions}
-            aanroepers={aanroepers}
-            werkPerVersie={d.werkPerVersie}
-            onRefresh={handleChanged}
-          />
+          <Section title="Werk" count={d.werk.length}>
+            <div className="space-y-1.5">
+              {d.werk.length === 0 && <Leeg>Geen werk aan de versies die hier draaien.</Leeg>}
+              {d.werk.map(w => <WerkRegel key={w.id} w={w} onChanged={handleChanged} onError={setErr} />)}
+              <WerkToevoegen versies={versiesHier} onChanged={handleChanged} onError={setErr} />
+            </div>
+          </Section>
         )}
 
-        {/* Wat er al gepromoveerd is, en wat daarvan terug kan */}
-        {isModel && (
-          <PromotieSectie
-            modelId={d.modelId} versies={Object.values(d.versions).filter(Boolean)} refreshKey={refreshKey}
-            onChanged={handleChanged} onError={setErr}
-          />
-        )}
+        <AanroepenSectie d={d} chainKey={chainKey} ketens={ketens} snap={snap} onChanged={handleChanged} onError={setErr}
+          onWijzig={(env, dep) => setDialoog({ soort: 'aanroep', env, bestaand: dep })}
+          onNieuw={env => setDialoog({ soort: 'aanroep', env })} />
 
-        {/* Koppelingen — per omgeving te bekijken */}
-        <KoppelingenSectie node={node} chain={chain} chainKey={chainKey} chains={chains} deps={deps}
-          aanroepers={aanroepers} onChanged={handleChanged} onError={setErr} />
+        {isModel && <WaarGebruikt d={d} snap={snap} ketens={ketens} chainKey={chainKey} ga={ga} />}
+
+        {isModel && <ReleasesSectie d={d} snap={snap} onTerug={r => setDialoog({ soort: 'terug', release: r })} />}
+
+        <VersiesSectie d={d} snap={snap} onVerwijder={id => setDialoog({ soort: 'verwijder', versionId: id })} />
       </div>
+
+      {dialoog?.soort === 'registreer' && <RegistreerDialoog node={d} chainKey={chainKey} onClose={() => setDialoog(null)} />}
+      {dialoog?.soort === 'promoveer' && <PromoveerDialoog node={d} graaf={graaf} chainKey={chainKey} standaardDoel={dialoog.doel} onClose={() => setDialoog(null)} />}
+      {dialoog?.soort === 'aanroep'   && <AanroepDialoog parentNode={d} standaardEnv={dialoog.env} bestaand={dialoog.bestaand} onClose={() => setDialoog(null)} />}
+      {dialoog?.soort === 'terug'     && <TerugdraaiDialoog release={dialoog.release} onClose={() => setDialoog(null)} />}
+      {dialoog?.soort === 'verwijder' && <VerwijderDialoog versionId={dialoog.versionId} onClose={() => setDialoog(null)} />}
     </aside>
   )
 }

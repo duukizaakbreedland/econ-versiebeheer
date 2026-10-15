@@ -1,20 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import OverzichtView from './views/OverzichtView.jsx'
 import GraphView from './views/GraphView.jsx'
 import ReleaseView from './views/ReleaseView.jsx'
 import BeheerView from './views/BeheerView.jsx'
 import LoginView from './views/LoginView.jsx'
 import WachtwoordWijzigen from './components/WachtwoordWijzigen.jsx'
-import { useChains } from './hooks/useChains.js'
+import Uitleg from './components/Uitleg.jsx'
+import { SnapshotProvider, useSnapshot } from './hooks/useSnapshot.jsx'
 import { useAuth, signOut } from './lib/auth.jsx'
 import { ThemeToggle } from './lib/theme.jsx'
+import { useRoute } from './lib/route.js'
+import { ToastProvider } from './components/ui/index.jsx'
 
 const TABS = [
-  { id: 'overzicht', label: 'Overzicht',            icon: IconGrid },
-  { id: 'graph',     label: 'Dependency Graph',     icon: IconGraph },
-  { id: 'release',   label: 'Release geschiedenis',  icon: IconHistory },
-  { id: 'beheer',    label: 'Beheer',                icon: IconSettings },
+  { id: 'overzicht', label: 'Overzicht', icon: IconGrid },
+  { id: 'ketens',    label: 'Ketens',    icon: IconGraph },
+  { id: 'releases',  label: 'Releases',  icon: IconHistory },
+  { id: 'beheer',    label: 'Beheer',    icon: IconSettings },
 ]
+
+const UITLEG_GEZIEN = 'uitlegGezien'
 
 function IconGrid({ c = 'w-4 h-4' }) {
   return (
@@ -54,16 +59,7 @@ function IconHistory({ c = 'w-4 h-4' }) {
 }
 
 export default function App() {
-  const [activeTab,     setActiveTab]     = useState('overzicht')
-  const [selectedChain, setSelectedChain] = useState(null)
-  const [wachtwoordOpen, setWachtwoordOpen] = useState(false)
   const { session, loading: authLoading } = useAuth()
-  const { chains, loading, error, refresh } = useChains(session ? 'buva' : null)
-
-  function navigateToGraph(chainKey) {
-    setSelectedChain(chainKey)
-    setActiveTab('graph')
-  }
 
   if (authLoading) {
     return (
@@ -76,42 +72,75 @@ export default function App() {
   if (!session) return <LoginView />
 
   return (
-    <div className="min-h-screen bg-page flex flex-col">
-      <Header loading={loading} error={error} onRefresh={refresh}
-        email={session.user?.email} onWachtwoord={() => setWachtwoordOpen(true)} />
-      {wachtwoordOpen && (
-        <WachtwoordWijzigen email={session.user?.email} onClose={() => setWachtwoordOpen(false)} />
-      )}
-      <Tabs active={activeTab} onChange={setActiveTab} />
+    <ToastProvider>
+      <SnapshotProvider orgSlug="buva">
+        <Shell email={session.user?.email} />
+      </SnapshotProvider>
+    </ToastProvider>
+  )
+}
+
+function Shell({ email }) {
+  const { route, ga } = useRoute()
+  const { loading, error, refresh } = useSnapshot()
+  const [wachtwoordOpen, setWachtwoordOpen] = useState(false)
+  const [uitlegOpen, setUitlegOpen] = useState(() => {
+    try { return localStorage.getItem(UITLEG_GEZIEN) !== 'ja' } catch { return false }
+  })
+
+  function sluitUitleg() {
+    setUitlegOpen(false)
+    try { localStorage.setItem(UITLEG_GEZIEN, 'ja') } catch { /* privémodus */ }
+  }
+
+  // "/" zet de cursor in het zoekveld van de actieve view
+  useEffect(() => {
+    function opToets(e) {
+      if (e.key !== '/' || e.target.closest('input, textarea, select, [contenteditable]')) return
+      const veld = document.querySelector('[data-zoekveld]')
+      if (veld) { e.preventDefault(); veld.focus() }
+    }
+    document.addEventListener('keydown', opToets)
+    return () => document.removeEventListener('keydown', opToets)
+  }, [])
+
+  return (
+    <div className="h-screen bg-page flex flex-col">
+      <Header loading={loading} error={error} onRefresh={refresh} email={email}
+        onWachtwoord={() => setWachtwoordOpen(true)} onUitleg={() => setUitlegOpen(true)} />
+      {wachtwoordOpen && <WachtwoordWijzigen email={email} onClose={() => setWachtwoordOpen(false)} />}
+      {uitlegOpen && <Uitleg onClose={sluitUitleg} />}
+      <Tabs active={route.tab} onChange={tab => ga({ tab, keten: null, model: null, query: {} })} />
       <main className="flex-1 overflow-hidden">
-        {activeTab === 'overzicht' && <OverzichtView chains={chains} loading={loading} error={error} onBekijkGraph={navigateToGraph} />}
-        {activeTab === 'graph'     && <GraphView chains={chains} initialChain={selectedChain} onRefresh={refresh} />}
-        {activeTab === 'release'   && <ReleaseView />}
-        {activeTab === 'beheer'    && <BeheerView onRefresh={refresh} />}
+        {route.tab === 'overzicht' && <OverzichtView ga={ga} />}
+        {route.tab === 'ketens'    && <GraphView route={route} ga={ga} />}
+        {route.tab === 'releases'  && <ReleaseView route={route} ga={ga} />}
+        {route.tab === 'beheer'    && <BeheerView ga={ga} />}
       </main>
     </div>
   )
 }
 
-// De balk heeft de vorm van de toolboxbalk (44 px, schaduw naar beneden,
-// themaschakelaar rechts), maar de app staat op zichzelf: geen link naar het
-// portaal, en het Enshore-icoon in plaats van het toolbox-logo.
-function Header({ loading, error, onRefresh, email, onWachtwoord }) {
+function Header({ loading, error, onRefresh, email, onWachtwoord, onUitleg }) {
   const icoonKnop = 'p-1.5 rounded-md text-meta hover:text-ink hover:bg-hover transition-colors'
   return (
     <header className="app-bar px-4 flex items-center gap-3 shrink-0">
       <img src={`${import.meta.env.BASE_URL}brand/icon.svg`} alt="" className="w-7 h-7 shrink-0" />
       <h1 className="text-ink font-semibold text-sm leading-none">eCon Versiebeheer</h1>
       <span className="text-ink-3 text-xs hidden md:inline">
-        <span className="mr-2 text-line-2">/</span>CPQ Model Dependency Tracker
+        <span className="mr-2 text-line-2">/</span>welke versie draait waar, en wie roept wat aan
       </span>
 
       <div className="ml-auto flex items-center gap-2">
-        {error && <span className="text-del text-xs">Verbindingsfout</span>}
-        <button onClick={onRefresh} disabled={loading} className={`${icoonKnop} disabled:opacity-40`}
-          title="Vernieuwen">
+        {error && <span className="text-del text-xs" title={error}>Verbindingsfout</span>}
+        <button onClick={onRefresh} disabled={loading} className={`${icoonKnop} disabled:opacity-40`} title="Vernieuwen">
           <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+          </svg>
+        </button>
+        <button onClick={onUitleg} className={icoonKnop} title="Uitleg: hoe werkt dit?">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/>
           </svg>
         </button>
         <span className="text-meta text-xs">Organisatie</span>
@@ -140,8 +169,6 @@ function Header({ loading, error, onRefresh, email, onWachtwoord }) {
   )
 }
 
-// Tabbladen zoals in de toolbox: het actieve tabblad neutraal (accent), niet
-// in een merkkleur — rood betekent in de apps al iets anders.
 function Tabs({ active, onChange }) {
   return (
     <nav className="bg-card border-b border-line px-4 flex gap-1 shrink-0">
@@ -153,10 +180,7 @@ function Tabs({ active, onChange }) {
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              isActive
-                ? 'border-accent text-ink'
-                : 'border-transparent text-ink-2 hover:text-ink'
-            }`}
+              isActive ? 'border-accent text-ink' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
             <Icon />
             {tab.label}

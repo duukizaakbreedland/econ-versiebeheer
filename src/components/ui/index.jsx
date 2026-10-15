@@ -1,8 +1,14 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { ENV, tint } from '../../lib/kleuren.js'
 
 // ─── Sectie met kop ───────────────────────────────────────────────────────────
-export function Section({ title, right, children, collapsible = false, defaultOpen = true }) {
+export function Section({ title, right, children, collapsible = false, defaultOpen = true, count }) {
   const [open, setOpen] = useState(defaultOpen)
+  const kop = <>
+    <span className="text-xs font-semibold uppercase tracking-wide">{title}</span>
+    {count !== undefined && <span className="text-ink-3 text-xs font-normal">{count}</span>}
+  </>
   return (
     <section className="border-t border-line/60 pt-3 first:border-t-0 first:pt-0">
       <div className="flex items-center gap-2 mb-2">
@@ -13,10 +19,10 @@ export function Section({ title, right, children, collapsible = false, defaultOp
               fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
               <path d="M9 18l6-6-6-6"/>
             </svg>
-            <span className="text-xs font-semibold uppercase tracking-wide">{title}</span>
+            {kop}
           </button>
         ) : (
-          <span className="text-meta text-xs font-semibold uppercase tracking-wide">{title}</span>
+          <span className="text-meta flex items-center gap-1.5">{kop}</span>
         )}
         {right && <div className="ml-auto">{right}</div>}
       </div>
@@ -26,12 +32,13 @@ export function Section({ title, right, children, collapsible = false, defaultOp
 }
 
 // ─── Meldingsbalk ─────────────────────────────────────────────────────────────
-export function Banner({ ok, children, onClose }) {
+export function Banner({ ok, warn, children, onClose }) {
+  const kleur = warn ? 'bg-mid-bg text-mid border border-mid-bg-2'
+              : ok   ? 'bg-add-bg text-add border border-add-bg-2'
+                     : 'bg-del-bg text-del border border-del-bg-2'
   return (
-    <div className={`text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${
-      ok ? 'bg-add-bg text-add border border-add-bg-2'
-         : 'bg-del-bg text-del border border-del-bg-2'}`}>
-      <span className="flex-1">{children}</span>
+    <div className={`text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${kleur}`}>
+      <span className="flex-1 min-w-0 break-words">{children}</span>
       {onClose && (
         <button onClick={onClose} className="opacity-60 hover:opacity-100 leading-none">×</button>
       )}
@@ -39,7 +46,7 @@ export function Banner({ ok, children, onClose }) {
   )
 }
 
-// ─── Invoerveld ───────────────────────────────────────────────────────────────
+// ─── Invoer ───────────────────────────────────────────────────────────────────
 export function TextInput({ className = '', ...props }) {
   return (
     <input
@@ -62,9 +69,30 @@ export function Select({ className = '', children, ...props }) {
   )
 }
 
+// Gelabeld veld: label links met vaste breedte, veld rechts
+export function Veld({ label, children, hint }) {
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <span className="text-ink-3 w-24 shrink-0 pt-1.5">{label}</span>
+      <div className="flex-1 min-w-0">
+        {children}
+        {hint && <div className="text-ink-3 text-[11px] mt-0.5">{hint}</div>}
+      </div>
+    </div>
+  )
+}
+
+export function Checkbox({ checked, onChange, children, disabled, className = '' }) {
+  return (
+    <label className={`flex items-start gap-2 text-xs cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)}
+        className="mt-0.5 accent-[var(--accent)]" />
+      <span className="min-w-0">{children}</span>
+    </label>
+  )
+}
+
 // ─── Knop ─────────────────────────────────────────────────────────────────────
-// Zoals in de toolbox: Enshore-rood (het verloop) alleen voor de hoofdknop,
-// al het andere neutraal. Doorzetten naar een omgeving is groen.
 const VARIANTS = {
   primary: 'btn-primary border border-transparent',
   green:   'btn-ok border border-transparent',
@@ -107,6 +135,26 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Zeker weten
   )
 }
 
+// ─── Chips ────────────────────────────────────────────────────────────────────
+export function EnvChip({ env, children, className = '', title }) {
+  const f = ENV[env]
+  if (!f) return null
+  return (
+    <span title={title} className={`px-1.5 py-0.5 rounded text-[10px] font-bold leading-none ${className}`}
+      style={{ background: f.bg, color: f.ink }}>
+      {children ?? env}
+    </span>
+  )
+}
+
+export function Chip({ familie, children, className = '', title }) {
+  return (
+    <span title={title} className={`text-xs px-2 py-0.5 rounded-full font-medium ${className}`} style={tint(familie)}>
+      {children}
+    </span>
+  )
+}
+
 // ─── Klik-om-te-bewerken tekst ────────────────────────────────────────────────
 export function InlineEdit({ value, onSave, placeholder = '—', mono = false, multiline = false, rows = 3, className = '', textClass = '' }) {
   const [editing, setEditing] = useState(false)
@@ -126,8 +174,6 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, m
   }
 
   if (editing) {
-    // Meerregelig: Enter maakt een nieuwe regel, opslaan gaat met Ctrl+Enter of
-    // door weg te klikken. Eenregelig blijft Enter opslaan.
     if (multiline) {
       return (
         <textarea
@@ -145,7 +191,6 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, m
         />
       )
     }
-
     return (
       <input
         ref={ref}
@@ -183,66 +228,89 @@ export function InlineEdit({ value, onSave, placeholder = '—', mono = false, m
   )
 }
 
-// ─── ⋯ menu ───────────────────────────────────────────────────────────────────
-// Het menu zweeft los van de pagina (position: fixed) zodat het niet wordt
-// afgeknipt door een paneel met overflow, en klapt omhoog als het onderaan
-// het scherm niet past.
-export function Menu({ items }) {
-  const [plek, setPlek] = useState(null)
-  const ref = useRef(null)
-
-  const usable = items.filter(Boolean)
-
+// ─── Dialoog ──────────────────────────────────────────────────────────────────
+// Zweeft boven alles, sluit met Esc of een klik naast het venster.
+export function Modal({ title, children, onClose, width = 'max-w-lg', footer }) {
   useEffect(() => {
-    if (!plek) return
-    function sluit(e) { if (!ref.current?.contains(e.target)) setPlek(null) }
-    function opEscape(e) { if (e.key === 'Escape') setPlek(null) }
-    document.addEventListener('mousedown', sluit)
-    document.addEventListener('keydown', opEscape)
-    window.addEventListener('scroll', () => setPlek(null), true)
-    return () => {
-      document.removeEventListener('mousedown', sluit)
-      document.removeEventListener('keydown', opEscape)
-    }
-  }, [plek])
+    function opToets(e) { if (e.key === 'Escape') onClose?.() }
+    document.addEventListener('keydown', opToets)
+    return () => document.removeEventListener('keydown', opToets)
+  }, [onClose])
 
-  if (usable.length === 0) return null
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.45)' }} onMouseDown={e => { if (e.target === e.currentTarget) onClose?.() }}>
+      <div className={`bg-card border border-line-2 rounded-xl shadow-depth-3 w-full ${width} max-h-[90vh] flex flex-col`}
+        role="dialog" aria-modal="true">
+        <header className="flex items-start gap-3 px-4 pt-3 pb-3 border-b border-line">
+          <div className="text-ink font-semibold text-sm flex-1 min-w-0 break-words">{title}</div>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink text-xl leading-none shrink-0">×</button>
+        </header>
+        <div className="px-4 py-3 overflow-y-auto flex-1">{children}</div>
+        {footer && <footer className="px-4 py-3 border-t border-line flex items-center gap-2">{footer}</footer>}
+      </div>
+    </div>,
+    document.body
+  )
+}
 
-  const hoogte = usable.length * 30 + 8
+// ─── Toast ────────────────────────────────────────────────────────────────────
+// Eén korte melding rechtsboven na een geslaagde actie; verdwijnt vanzelf.
+const ToastContext = createContext(() => {})
 
-  function toggle(e) {
-    if (plek) { setPlek(null); return }
-    const r = e.currentTarget.getBoundingClientRect()
-    const pastOnder = window.innerHeight - r.bottom > hoogte + 12
-    setPlek({
-      top:   pastOnder ? r.bottom + 4 : r.top - hoogte - 4,
-      right: window.innerWidth - r.right,
-    })
-  }
+export function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([])
+  const teller = useRef(0)
+
+  const toon = useCallback((tekst, { ok = true, actie } = {}) => {
+    const id = ++teller.current
+    setToasts(t => [...t, { id, tekst, ok, actie }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ok ? 6000 : 10000)
+  }, [])
+
+  const value = useMemo(() => toon, [toon])
 
   return (
-    <div ref={ref} className="inline-block">
-      <button onClick={toggle}
-        className="text-ink-3 hover:text-ink px-1 leading-none transition-colors"
-        title="Meer acties">
-        ⋯
-      </button>
-      {plek && (
-        <div style={{ position: 'fixed', top: plek.top, right: plek.right, zIndex: 60 }}
-          className="w-56 bg-card border border-line-2 rounded-lg shadow-depth-3 overflow-hidden py-1">
-          {usable.map((item, i) => (
-            <button key={i}
-              onClick={() => { setPlek(null); item.onClick() }}
-              disabled={item.disabled}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors disabled:opacity-40
-                          disabled:cursor-not-allowed ${item.danger
-                            ? 'text-del hover:bg-del-bg'
-                            : 'text-ink hover:bg-hover'}`}>
-              {item.label}
-            </button>
+    <ToastContext.Provider value={value}>
+      {children}
+      {createPortal(
+        <div className="fixed top-14 right-4 z-[90] space-y-2 w-80 max-w-[90vw]">
+          {toasts.map(t => (
+            <div key={t.id} className={`text-xs px-3 py-2 rounded-lg shadow-depth-2 border flex items-start gap-2
+              ${t.ok ? 'bg-add-bg text-add border-add-bg-2' : 'bg-del-bg text-del border-del-bg-2'}`}>
+              <span className="flex-1 min-w-0 break-words">{t.tekst}</span>
+              {t.actie && (
+                <button onClick={() => { t.actie.onClick(); setToasts(x => x.filter(y => y.id !== t.id)) }}
+                  className="underline shrink-0">{t.actie.label}</button>
+              )}
+              <button onClick={() => setToasts(x => x.filter(y => y.id !== t.id))} className="opacity-60 hover:opacity-100 leading-none">×</button>
+            </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
+    </ToastContext.Provider>
+  )
+}
+
+export function useToast() {
+  return useContext(ToastContext)
+}
+
+// ─── Lege toestand ────────────────────────────────────────────────────────────
+export function Leeg({ children, className = '' }) {
+  return <div className={`text-ink-3 text-xs ${className}`}>{children}</div>
+}
+
+export function Spinner({ tekst = 'Laden…' }) {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <svg className="w-6 h-6 text-meta animate-spin mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+        </svg>
+        <div className="text-meta text-sm">{tekst}</div>
+      </div>
     </div>
   )
 }

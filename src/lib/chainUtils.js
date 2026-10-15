@@ -1,151 +1,115 @@
-// Helpers die afgeleide gegevens uit de ketenstructuur berekenen.
-// De ketens zelf komen uit Supabase via fetchChains() in api.js.
+// De keten zoals hij werkelijk draait, afgeleid uit de aanroepen.
+//
+// Een keten is een hoofdmodel. Per omgeving draait dat hoofdmodel op zijn
+// actuele versie; elk model daaronder draait op de versie waarmee zijn ouder
+// hem aanroept (de koppelingen, per omgeving en per ouderversie). We lopen per
+// omgeving elk pad vanaf het hoofdmodel af en voegen daarna samen wat in alle
+// omgevingen op dezelfde versies uitkomt. Een model dat binnen één keten op
+// verschillende versies wordt aangeroepen (zes subdorpels roepen Profielmodel
+// aan, niet allemaal dezelfde versie) krijgt per versie een eigen node, zodat
+// je ziet wie waaraan hangt. Wordt overal dezelfde versie aangeroepen, dan is
+// het één gedeelde node met meerdere pijlen.
 
-import { ORANJE, GEEL, VIOLET, GROEN } from './kleuren.js'
+import { ORANJE, GEEL, VIOLET, GROEN, BLAUW } from './kleuren.js'
+import { vergelijkVersies } from './versies.js'
+import { ENVS } from './snapshot.js'
 
-export const ENVS = ['PROD', 'ACC', 'TST']
+export { ENVS }
+export { vergelijkVersies }
 
-// Gedeelde submodellen: welke modellen komen in meerdere ketens voor?
-export function getSharedModels(chains = {}) {
-  const count = {}
-  Object.entries(chains).forEach(([chainKey, chain]) => {
-    chain.nodes.filter(n => n.type === 'model').forEach(n => {
-      if (!count[n.label]) count[n.label] = []
-      count[n.label].push(chainKey)
-    })
-  })
-  return Object.fromEntries(
-    Object.entries(count).filter(([, cs]) => cs.length > 1)
-  )
-}
-
-// ─── Versienummers vergelijken ────────────────────────────────────────────────
-// Ze zien eruit als jj.mm.dd, soms met een suffix: 25.05.07HF, 21.11.30a.
-function ontleed(versie) {
-  const m = /^(\d{2})\.(\d{2})\.(\d{2})(.*)$/.exec(versie ?? '')
-  return m ? { datum: m[1] + m[2] + m[3], suffix: m[4] } : null
-}
-
-// -1 = a ouder, 0 = gelijk, 1 = a nieuwer, null = niet te vergelijken
-export function vergelijkVersies(a, b) {
-  if (a === b) return 0
-  const pa = ontleed(a), pb = ontleed(b)
-  if (!pa || !pb) return null
-  if (pa.datum !== pb.datum) return pa.datum < pb.datum ? -1 : 1
-  if (pa.suffix === pb.suffix) return 0
-  return pa.suffix < pb.suffix ? -1 : 1
-}
-
-// Hoe verhoudt een omgeving zich tot productie?
+// ─── Versie ten opzichte van PROD ─────────────────────────────────────────────
 export function versieStatus(versie, prodVersie) {
   if (!versie || !prodVersie) return 'onbekend'
   const v = vergelijkVersies(versie, prodVersie)
-  if (v === 0)    return 'gelijk'
-  if (v === 1)    return 'voor'
-  if (v === -1)   return 'achter'
+  if (v === 0)  return 'gelijk'
+  if (v === 1)  return 'voor'
+  if (v === -1) return 'achter'
   return 'anders'
 }
 
+export const STATUS_TEKEN = { voor: '↑', achter: '↓', anders: '≠' }
+
 // Samenvatting voor de kop van het detailpaneel
 export function statusSamenvatting(versions) {
-  const prod = versions.PROD
-  const acc  = versieStatus(versions.ACC, prod)
-  const tst  = versieStatus(versions.TST, prod)
+  const aanwezig = ENVS.filter(e => versions[e])
+  if (aanwezig.length === 0) return { label: 'Draait nergens', familie: ORANJE }
+  if (!versions.PROD) return { label: `Alleen in ${aanwezig.join(' en ')}`, familie: GEEL }
+  const acc = versieStatus(versions.ACC, versions.PROD)
+  const tst = versieStatus(versions.TST, versions.PROD)
   if ([acc, tst].includes('achter')) return { label: 'Loopt achter op PROD', familie: ORANJE }
   if ([acc, tst].includes('voor'))   return { label: 'Loopt voor op PROD',   familie: GEEL }
   if ([acc, tst].includes('anders')) return { label: 'Wijkt af van PROD',    familie: VIOLET }
+  if (aanwezig.length < 3) return { label: `Niet in ${ENVS.filter(e => !versions[e]).join(' en ')}`, familie: GEEL }
   return { label: 'Gelijk in alle omgevingen', familie: GROEN }
 }
 
-// ─── De keten zoals hij werkelijk wordt aangeroepen ───────────────────────────
-// Het hoofdmodel gebruikt zijn eigen versie; elk model daaronder de versie
-// waarmee zijn ouder hem aanroept. Dat kan binnen één keten verschillen: zes
-// subdorpels roepen allemaal Profielmodel aan, maar niet allemaal dezelfde
-// versie. Zo'n model krijgt dan per aangeroepen versie een eigen node, zodat je
-// ziet wie waaraan hangt. Wordt overal dezelfde versie aangeroepen, dan blijft
-// het één gedeelde node.
-//
-// We lopen per omgeving elk pad vanaf het hoofdmodel af en voegen daarna samen
-// wat in alle omgevingen op dezelfde versies uitkomt. Dat mag: wat een model
-// aanroept hangt alleen af van zijn eigen versie, dus de rest van de tak is dan
-// ook gelijk. Een interface voegen we pas samen als hij ook naar hetzelfde
-// submodel op dezelfde versies leidt, anders lopen twee takken via één blokje.
-//
-// Geeft { nodes, edges } in de vorm van chain.nodes/chain.edges, met per node
-// de versies in deze keten, de omgevingen waar de export die versie miste, en
-// nodeKey: de node in de vaste ketenstructuur waar hij een variant van is.
+// ─── De graaf van één keten ───────────────────────────────────────────────────
 const MAX_PADEN = 5000
 
-export function ketenGraaf(chain, deps = []) {
-  const statisch = () => {
-    const doelen = new Set(chain.edges.map(e => e.target))
-    return {
-      nodes: chain.nodes.map(n => ({ ...n, nodeKey: n.id, isWortel: !doelen.has(n.id), ontbreekt: [] })),
-      edges: chain.edges,
-    }
-  }
-
-  const nodePerModel = {}
-  chain.nodes.forEach(n => { nodePerModel[n.modelId] = n })
-
-  const heeftOuder = new Set(chain.edges.map(e => e.target))
-  const wortel = chain.nodes.find(n => !heeftOuder.has(n.id))
-  if (!wortel) return statisch()
-
-  // Koppelingen gegroepeerd op (omgeving, parentmodel, parentversie)
-  const perOuder = {}
-  for (const d of deps) {
-    const k = `${d.env}|${d.parentModelId}|${d.parentVersion}`
-    if (!perOuder[k]) perOuder[k] = []
-    perOuder[k].push(d)
-  }
+export function ketenGraaf(chain, snap) {
+  const root = snap.model(chain.rootModelId)
+  if (!root) return { nodes: [], edges: [], bereikbaar: new Set() }
 
   // Elk pad door de keten, met per omgeving de versie op dat pad
   const paden = new Map()
-  const leg = (pad, node, ouderPad, env, versie, ontbreekt) => {
+  const leg = (pad, model, ouderPad, env, versie, versieId, ontbreekt, viaIface) => {
     let p = paden.get(pad)
     if (!p) {
-      p = { node, ouderPad, versions: {}, ontbreekt: new Set(), kindPad: null }
+      p = { model, ouderPad, versions: {}, versionIds: {}, ontbreekt: new Set(), kindPad: null, viaIface }
       paden.set(pad, p)
     }
-    p.versions[env] = versie
+    p.versions[env]   = versie
+    p.versionIds[env] = versieId
     if (ontbreekt) p.ontbreekt.add(env)
     return p
   }
 
+  const bereikbaar = new Set()   // 'ENV|versionId' van alles wat in deze keten draait
+  let teGroot = false
+
   for (const env of ENVS) {
-    const start = wortel.versions?.[env]
+    const start = snap.current(root.id, env)
     if (!start) continue
-    leg(wortel.id, wortel, null, env, start, false)
-    const stapel = [{ pad: wortel.id, node: wortel, versie: start, voorouders: [wortel.modelId] }]
+    leg(root.id, root, null, env, start.version, start.versionId, false, null)
+    bereikbaar.add(`${env}|${start.versionId}`)
+    const stapel = [{ pad: root.id, versieId: start.versionId, voorouders: [root.id] }]
 
     while (stapel.length) {
-      const { pad, node, versie, voorouders } = stapel.pop()
-      for (const d of perOuder[`${env}|${node.modelId}|${versie}`] ?? []) {
-        const iface = nodePerModel[d.ifaceModelId]
-        const kind  = nodePerModel[d.childModelId]
-        if (!kind || !d.childVersion || voorouders.includes(kind.modelId)) continue
-        if (paden.size > MAX_PADEN) return statisch()
+      const { pad, versieId, voorouders } = stapel.pop()
+      for (const d of snap.callsOf(env, versieId)) {
+        const iface = snap.model(d.ifaceModelId)
+        const kind  = snap.model(d.childModelId)
+        if (!kind || voorouders.includes(kind.id)) continue
+        if (paden.size > MAX_PADEN) { teGroot = true; break }
 
         let ouder = pad
         if (iface) {
           ouder = `${pad}>${iface.id}~${kind.id}`
-          leg(ouder, iface, pad, env, d.ifaceVersion, false).kindPad = `${ouder}>${kind.id}`
+          leg(ouder, iface, pad, env, d.ifaceVersion, d.ifaceVersionId, false, null).kindPad = `${ouder}>${kind.id}`
+          bereikbaar.add(`${env}|${d.ifaceVersionId}`)
         }
         const kindPad = `${ouder}>${kind.id}`
-        leg(kindPad, kind, ouder, env, d.childVersion, d.ontbreekt)
-        stapel.push({ pad: kindPad, node: kind, versie: d.childVersion, voorouders: [...voorouders, kind.modelId] })
+        leg(kindPad, kind, ouder, env, d.childVersion, d.childVersionId, d.ontbreekt, iface ? ouder : null)
+        bereikbaar.add(`${env}|${d.childVersionId}`)
+        stapel.push({ pad: kindPad, versieId: d.childVersionId, voorouders: [...voorouders, kind.id] })
       }
+      if (teGroot) break
     }
   }
-  if (!paden.has(wortel.id)) return statisch()
+  if (!paden.has(root.id)) {
+    // Hoofdmodel draait nergens: toon alleen het hoofdmodel, zonder versies
+    return {
+      nodes: [maakNode(root, root.id, {}, {}, [], true, snap)],
+      edges: [], bereikbaar,
+    }
+  }
 
   // Samenvoegen op model + versies (en voor een interface: + waar hij heen leidt)
   const vector = v => ENVS.map(e => v[e] ?? '-').join('/')
   const handtekening = p => {
-    const eigen = `${p.node.id}@${vector(p.versions)}`
+    const eigen = `${p.model.id}@${vector(p.versions)}`
     const kind  = p.kindPad && paden.get(p.kindPad)
-    return kind ? `${eigen}>${kind.node.id}@${vector(kind.versions)}` : eigen
+    return kind ? `${eigen}>${kind.model.id}@${vector(kind.versions)}` : eigen
   }
 
   const groepen = new Map()      // handtekening -> variant
@@ -153,107 +117,175 @@ export function ketenGraaf(chain, deps = []) {
   for (const [pad, p] of paden) {
     const h = handtekening(p)
     groepVanPad.set(pad, h)
-    if (!groepen.has(h)) groepen.set(h, { bron: p.node, versions: { ...p.versions }, ontbreekt: new Set() })
+    if (!groepen.has(h)) {
+      groepen.set(h, { model: p.model, versions: { ...p.versions }, versionIds: { ...p.versionIds }, ontbreekt: new Set() })
+    }
     p.ontbreekt.forEach(e => groepen.get(h).ontbreekt.add(e))
   }
 
-  // Een model met maar één variant houdt gewoon zijn eigen id; anders krijgt
-  // elke variant zijn versies erbij, zodat de id stabiel blijft tussen laden door.
+  // Een model met maar één variant houdt zijn model-id; anders krijgt elke
+  // variant zijn versies erbij, zodat de id stabiel blijft tussen laden door.
   const varianten = {}
-  for (const g of groepen.values()) varianten[g.bron.id] = (varianten[g.bron.id] ?? 0) + 1
+  for (const g of groepen.values()) varianten[g.model.id] = (varianten[g.model.id] ?? 0) + 1
   const idVan = {}
-  for (const [h, g] of groepen) idVan[h] = varianten[g.bron.id] > 1 ? h : g.bron.id
+  for (const [h, g] of groepen) idVan[h] = varianten[g.model.id] > 1 ? h : g.model.id
 
-  const nodes = [...groepen].map(([h, g]) => ({
-    ...g.bron,
-    id:        idVan[h],
-    nodeKey:   g.bron.id,
-    isWortel:  g.bron.id === wortel.id,
-    versions:  g.versions,
-    ontbreekt: ENVS.filter(e => g.ontbreekt.has(e)),
-    // Werk hangt aan een versie: toon het werk van de TST-versie van deze variant
-    workItem:  g.bron.werkPerVersie
-      ? g.bron.werkPerVersie[g.versions.TST]
-      : g.versions.TST && g.versions.TST === g.bron.versions?.TST ? g.bron.workItem : undefined,
-  }))
+  const nodes = [...groepen].map(([h, g]) =>
+    maakNode(g.model, idVan[h], g.versions, g.versionIds, ENVS.filter(e => g.ontbreekt.has(e)), g.model.id === root.id, snap))
 
   const edges = []
   const gezien = new Set()
-  const verbind = (source, target) => {
+  for (const [pad, p] of paden) {
+    if (!p.ouderPad) continue
+    const source = idVan[groepVanPad.get(p.ouderPad)]
+    const target = idVan[groepVanPad.get(pad)]
     const k = `${source}->${target}`
     if (!gezien.has(k)) { gezien.add(k); edges.push({ source, target }) }
   }
-  for (const [pad, p] of paden) {
-    if (p.ouderPad) verbind(idVan[groepVanPad.get(p.ouderPad)], idVan[groepVanPad.get(pad)])
+
+  // Wie roept elke node aan: ouder-modelnodes (over de interface heen) met de interface ertussen
+  const perId = Object.fromEntries(nodes.map(n => [n.id, n]))
+  const inkomend = {}
+  for (const e of edges) (inkomend[e.target] ??= []).push(e.source)
+  for (const n of nodes) {
+    n.parentLinks = []
+    for (const bronId of inkomend[n.id] ?? []) {
+      const bron = perId[bronId]
+      if (!bron) continue
+      if (bron.type === 'interface') {
+        for (const ouderId of inkomend[bronId] ?? []) {
+          if (perId[ouderId]) n.parentLinks.push({ parent: perId[ouderId], iface: bron })
+        }
+      } else {
+        n.parentLinks.push({ parent: bron, iface: null })
+      }
+    }
+    n.variants = varianten[n.modelId] ?? 1
   }
 
-  // Wat via de koppelingen niet te bereiken is, roept in deze keten niemand aan:
-  // dat laten we weg in plaats van een leeg blok te tekenen. Leg je een
-  // koppeling aan (detailpaneel → Koppelingen), dan verschijnt het weer.
-  return { nodes, edges }
+  return { nodes, edges, bereikbaar, teGroot }
 }
 
-// ─── Onderweg naar PROD ───────────────────────────────────────────────────────
-// Wijkt een node in env af van PROD op een manier die werk betekent: nieuwer, of
-// niet te vergelijken. Ouder telt niet (die omgeving loopt achter), en een model
-// dat er niet draait ook niet: het verschil zit dan al in de ouder die het (niet)
-// aanroept. Alleen een hoofdmodel dat nog niet in PROD staat, is nieuw.
-export function wijktAf(n, env) {
-  const v = n.versions?.[env], p = n.versions?.PROD
-  if (v && p) return ['voor', 'anders'].includes(versieStatus(v, p))
-  return Boolean(v) && !p && Boolean(n.isWortel)
-}
-
-export const onderweg = n => wijktAf(n, 'TST') || wijktAf(n, 'ACC')
-
-// De keten met zijn nodes zoals de graph ze toont: per aangeroepen versie, met
-// het werk van die versie. Gebruik dit voor alles wat iets over een keten zegt
-// (overzicht, ketenmenu): de versie van het model als geheel zegt niets over
-// welke versie déze keten aanroept.
-export function ketenOpgelost(chain, deps = []) {
-  const heeftOuder = new Set(chain.edges.map(e => e.target))
+function maakNode(model, id, versions, versionIds, ontbreekt, isWortel, snap) {
+  // Werk aan de versies die deze node draait: lopend werk eerst, dan afgerond
+  const werk = []
+  const gezien = new Set()
+  for (const env of ENVS) {
+    const vid = versionIds[env]
+    if (!vid) continue
+    for (const w of snap.workOf(vid)) {
+      if (gezien.has(w.id)) continue
+      gezien.add(w.id)
+      werk.push({ ...w, env })
+    }
+  }
+  werk.sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || new Date(b.createdAt) - new Date(a.createdAt))
   return {
-    ...chain,
-    wortel: chain.nodes.find(n => !heeftOuder.has(n.id))?.id,
-    modelCount: new Set(chain.nodes.filter(n => n.type === 'model').map(n => n.modelId)).size,
-    nodes: ketenGraaf(chain, deps).nodes,
+    id,
+    nodeKey:  model.id,
+    modelId:  model.id,
+    type:     model.type === 'INTERFACE' ? 'interface' : 'model',
+    label:    model.name,
+    notes:    model.notes,
+    versions, versionIds, ontbreekt, isWortel,
+    werk,
+    openWerk: werk.filter(w => w.status !== 'DONE'),
+    parentLinks: [],
+    variants: 1,
   }
 }
 
-// Stats per keten voor het overzicht; geef een keten uit ketenOpgelost() mee
-export function chainStats(chain) {
-  const models    = chain.nodes.filter(n => n.type === 'model')
-  // In ontwikkeling is wat in TST of ACC nieuwer is dan in PROD, of er niet mee
-  // te vergelijken valt. Een ouder versie telt niet (die omgeving loopt achter),
-  // en een model dat er niet draait ook niet: dat is geen werk, en het verschil
-  // zit dan al in de ouder die het (niet) aanroept. Alleen een hoofdmodel dat
-  // nog niet in PROD staat, is nieuw.
-  // Per model tellen: hangt een model op twee plekken in de keten, dan telt het
-  // één keer. Interfaces tellen mee: een andere interfaceversie is ook een verschil.
-  const isWortel = n => chain.wortel !== undefined && n.nodeKey === chain.wortel
-  const verschil  = (n, env) => wijktAf({ ...n, isWortel: isWortel(n) }, env)
-  const afwijkend = env => [...new Set(chain.nodes
-    .filter(n => verschil(n, env))
-    .map(n => n.modelId ?? n.label))]
-  const tstNewer  = afwijkend('TST')
-  const accNewer  = afwijkend('ACC')
-  // Omgevingen waar de keten (nog) niet draait: het hoofdmodel heeft er geen versie
-  const wortelNode = chain.nodes.find(isWortel)
-  const nietIn = wortelNode ? ENVS.filter(e => !wortelNode.versions[e]) : []
-  // Alleen werk aan wat nog onderweg is: een node die in TST of ACC afwijkt van
-  // PROD. Werk aan een versie die overal al draait, is klaar en zegt niets meer.
-  const onderweg  = n => verschil(n, 'TST') || verschil(n, 'ACC')
-  const workItems = [...new Map(chain.nodes.filter(n => n.workItem && onderweg(n))
-    .map(n => [n.workItem.id, { model: n.label, ...n.workItem }])).values()]
+// ─── Status van een keten ─────────────────────────────────────────────────────
+// In ontwikkeling: TST wijkt af van ACC. Klaar voor PROD: ACC wijkt af van PROD
+// terwijl TST gelijk is aan ACC. Beide open: beide soorten verschil komen voor.
+// Een omgeving waar het hoofdmodel niet draait telt niet mee als verschil.
+export const STATUS_CFG = {
+  STABIEL:         { label: 'Stabiel',          familie: GROEN,  uitleg: 'Overal dezelfde versies' },
+  IN_ONTWIKKELING: { label: 'In ontwikkeling',  familie: GEEL,   uitleg: 'TST wijkt af van ACC' },
+  KLAAR_VOOR_PROD: { label: 'Klaar voor PROD',  familie: BLAUW,  uitleg: 'ACC wijkt af van PROD, TST is gelijk aan ACC' },
+  BEIDE_OPEN:      { label: 'Beide open',       familie: ORANJE, uitleg: 'Er staat werk in TST én er wacht iets in ACC op PROD' },
+}
 
-  // Een opmerking bij een model betekent: hier moet iets mee gebeuren
-  const opmerkingen = [...new Map(chain.nodes.filter(n => n.notes?.trim())
-    .map(n => [n.modelId ?? n.label, { model: n.label, tekst: n.notes.trim() }])).values()]
+function verschilt(a, b) {
+  return (a ?? null) !== (b ?? null)
+}
+
+export function chainStats(chain, graaf, snap) {
+  const root = graaf.nodes.find(n => n.isWortel)
+  const rootIn = env => Boolean(snap.current(chain.rootModelId, env))
+  const nietIn = ENVS.filter(e => !rootIn(e))
+
+  const afwijkend = (a, b) => [...new Set(graaf.nodes
+    .filter(n => rootIn(a) && rootIn(b) && verschilt(n.versions[a], n.versions[b]))
+    .map(n => n.modelId))]
+  const tstAfwijkend = afwijkend('TST', 'ACC')
+  const accAfwijkend = afwijkend('ACC', 'PROD')
 
   let status = 'STABIEL'
-  if (tstNewer.length > 0 && accNewer.length > 0) status = 'ACTIEF'
-  else if (accNewer.length > 0) status = 'KLAAR_VOOR_PROD'
-  else if (tstNewer.length > 0) status = 'IN_ONTWIKKELING'
+  if (tstAfwijkend.length && accAfwijkend.length) status = 'BEIDE_OPEN'
+  else if (accAfwijkend.length) status = 'KLAAR_VOOR_PROD'
+  else if (tstAfwijkend.length) status = 'IN_ONTWIKKELING'
+  // Een keten die alleen in TST bestaat is per definitie in ontwikkeling
+  if (status === 'STABIEL' && rootIn('TST') && !rootIn('PROD')) status = 'IN_ONTWIKKELING'
+  if (status === 'STABIEL' && rootIn('ACC') && !rootIn('PROD')) status = 'KLAAR_VOOR_PROD'
 
-  return { models: chain.modelCount ?? models.length, tstNewer: tstNewer.length, accNewer: accNewer.length, nietIn, workItems, opmerkingen, status }
+  const openWerk = [...new Map(graaf.nodes.flatMap(n => n.openWerk.map(w => [w.id, { ...w, node: n }]))).values()]
+  const opmerkingen = [...new Map(graaf.nodes.filter(n => n.notes?.trim())
+    .map(n => [n.modelId, { model: n.label, modelId: n.modelId, tekst: n.notes.trim() }])).values()]
+  const ontbreekt = graaf.nodes.filter(n => n.ontbreekt.length > 0)
+    .map(n => ({ model: n.label, modelId: n.modelId, envs: n.ontbreekt }))
+
+  // Een model dat in dezelfde omgeving op meerdere versies wordt aangeroepen
+  // (de oranje regel uit het oude Excel), per model samengevat over de omgevingen
+  const perModel = {}
+  for (const env of ENVS) {
+    const perModelVersies = {}
+    for (const n of graaf.nodes) {
+      if (n.type !== 'model' || !n.versions[env]) continue
+      ;(perModelVersies[n.modelId] ??= new Set()).add(n.versions[env])
+    }
+    for (const [modelId, set] of Object.entries(perModelVersies)) {
+      if (set.size < 2) continue
+      const m = (perModel[modelId] ??= { modelId, model: snap.model(modelId)?.name, envs: [], versies: new Set() })
+      m.envs.push(env)
+      set.forEach(v => m.versies.add(v))
+    }
+  }
+  const meerdereVersies = Object.values(perModel).map(m => ({ ...m, versies: [...m.versies] }))
+
+  return {
+    status, cfg: STATUS_CFG[status],
+    models: new Set(graaf.nodes.filter(n => n.type === 'model').map(n => n.modelId)).size,
+    tstAfwijkend, accAfwijkend, nietIn,
+    rootVersions: root?.versions ?? {},
+    openWerk, opmerkingen, ontbreekt, meerdereVersies,
+  }
+}
+
+// ─── Alle ketens tegelijk ─────────────────────────────────────────────────────
+// Eén keer per snapshot: de graaf en status per keten, plus waar elke versie en
+// elk model draait. Views lezen hieruit in plaats van zelf te rekenen.
+export function alleKetens(snap) {
+  const perKey = {}
+  const ketensVanVersie = {}   // 'ENV|versionId' -> Set(chainKey)
+  const ketensVanModel  = {}   // modelId -> Set(chainKey)
+  for (const chain of snap.chains) {
+    const graaf = ketenGraaf(chain, snap)
+    const stats = chainStats(chain, graaf, snap)
+    perKey[chain.key] = { chain, graaf, stats }
+    for (const k of graaf.bereikbaar) (ketensVanVersie[k] ??= new Set()).add(chain.key)
+    for (const n of graaf.nodes) (ketensVanModel[n.modelId] ??= new Set()).add(chain.key)
+  }
+  return {
+    perKey,
+    lijst: Object.values(perKey),
+    ketensVanVersie: (env, versionId) => [...(ketensVanVersie[`${env}|${versionId}`] ?? [])],
+    ketensVanModel:  modelId => [...(ketensVanModel[modelId] ?? [])],
+    draaitIn: (env, versionId) => Boolean(ketensVanVersie[`${env}|${versionId}`]),
+  }
+}
+
+// Welke andere ketens gebruiken dit model ook?
+export function gedeeldIn(ketens, modelId, eigenKey) {
+  return ketens.ketensVanModel(modelId).filter(k => k !== eigenKey)
 }

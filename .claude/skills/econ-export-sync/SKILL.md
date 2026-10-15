@@ -46,7 +46,7 @@ er een bestand, stop dan en vraag erom; het script weigert ook.
 
 3. **Back-up.** Het gratis plan heeft geen back-up die je terug kunt zetten, dus maak er zelf een:
    ```bash
-   B=export/backup/<jjjj-mm-dd>; mkdir -p $B; for t in organizations environments models model_versions environment_versions dependencies chains chain_nodes chain_edges work_items deployment_logs deployment_log_versions; do npx supabase db query --linked "select * from $t" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).rows;require('fs').writeFileSync(process.argv[1],JSON.stringify(r,null,1));console.log(process.argv[1], r.length)})" "$B/$t.json"; done
+   B=export/backup/<jjjj-mm-dd>; mkdir -p $B; for t in organizations environments models model_versions environment_versions dependencies chains work_items deployment_logs deployment_log_versions deployment_log_dependencies activity_log; do npx supabase db query --linked "select * from $t" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).rows;require('fs').writeFileSync(process.argv[1],JSON.stringify(r,null,1));console.log(process.argv[1], r.length)})" "$B/$t.json"; done
    ```
 
 4. **Verschil bepalen.**
@@ -67,10 +67,12 @@ er een bestand, stop dan en vraag erom; het script weigert ook.
      python -c "import sys; sys.path.insert(0,'tools'); from econ_naar_supabase import lees_zip; m,_=lees_zip(sys.argv[1]); d=m[(sys.argv[2],sys.argv[3])]; print([(l['submodel'],l['submodelversie']) for l in d['links']])" "export/<datum>/Export TST 2.zip" Dorpelmodel 25.10.22
      ```
    - **Promoties zonder werk-item of ticket.** Die zijn prima, maar de release krijgt dan geen ticket.
-   - **"Actief in de tool, niet in de export" en ketens zonder hoofdmodel.** Het script
-     ruimt die niet op. Vraag de gebruiker of ze weg mogen; zie "Opruimen" hieronder.
+   - **"Actief in de tool, niet in de export" en ketens zonder hoofdmodel in de Generic
+     Model.** Het script ruimt die niet op. Vraag de gebruiker of ze weg mogen; zie
+     "Opruimen" hieronder.
    - **Meldingen "wordt aangeroepen op X, Y"** zijn normaal: modellen die per keten een
-     andere versie aanroepen. De koppelingen houden hun eigen versie.
+     andere versie aanroepen. Promoties en registraties gaan alleen over hoofdmodellen;
+     submodelversies volgen uit de koppelingen.
 
 5. **Droog testen tegen live.** Draai de SQL in een transactie die eindigt met `rollback`,
    met een telling erbij:
@@ -79,9 +81,10 @@ er een bestand, stop dan en vraag erom; het script weigert ook.
    echo "select (select count(*) from model_versions) mv, (select count(*) from dependencies) deps, (select count(*) from deployment_logs) logs; rollback;" >> $D/sync_test.sql
    npx supabase db query --linked -f $D/sync_test.sql
    ```
-   De toename moet kloppen met het rapport. Elke promotie geeft één release met één
-   DEPLOYED-regel, plus een REPLACED-regel als er al een versie stond. Verwijder
-   `sync_test.sql` daarna weer.
+   De toename moet kloppen met het rapport. Elke promotie loopt via `apply_release` en
+   geeft één release met één DEPLOYED-regel, plus een REPLACED-regel als er al een versie
+   stond; koppelingen gaan via `set_dependency`/`remove_dependency`. Alles komt dus ook in
+   `activity_log` (gebruiker `cli`). Verwijder `sync_test.sql` daarna weer.
 
 6. **Doorvoeren.** `npx supabase db query --linked -f export/<datum>/sync.sql` draait als één
    transactie, met `begin`/`commit` in het bestand zelf. Vraag eerst akkoord als het rapport
@@ -99,17 +102,18 @@ er een bestand, stop dan en vraag erom; het script weigert ook.
 
 ## Opruimen (alleen na akkoord van de gebruiker)
 
-Ketens zonder hoofdmodel in de export zijn meestal oude testketens. Kijk eerst waar het
-hoofdmodel nog aan hangt. Doe dit op één regel: een `db query` met een meerregelige
+Ketens zonder hoofdmodel in de Generic Model zijn meestal oude testketens. Een keten is
+alleen een hoofdmodel; alles eronder volgt uit de koppelingen. Kijk eerst wat er aan
+het hoofdmodel hangt. Doe dit op één regel: een `db query` met een meerregelige
 SQL-string als argument geeft geen resultaat. Gebruik voor langere SQL `-f`.
 
 ```bash
-npx supabase db query --linked "select m.name, (select string_agg(c.key, ',') from chain_nodes n join chains c on c.id=n.chain_id where n.model_id=m.id) ketens, (select count(*) from work_items wi join model_versions mv on mv.id=wi.model_version_id where mv.model_id=m.id) wi, (select count(*) from deployment_log_versions d join model_versions mv on mv.id=d.model_version_id where mv.model_id=m.id) releases from models m where m.name in ('<Hoofdmodel>')"
+npx supabase db query --linked "select m.name, (select string_agg(c.key, ',') from chains c where c.root_model_id = m.id) ketens, (select count(*) from work_items wi join model_versions mv on mv.id=wi.model_version_id where mv.model_id=m.id) wi, (select count(*) from deployment_log_versions d join model_versions mv on mv.id=d.model_version_id where mv.model_id=m.id) releases, (select count(*) from dependencies d join model_versions mv on mv.id=d.parent_version_id where mv.model_id=m.id) aanroepen from models m where m.name in ('<Hoofdmodel>')"
 ```
 
-Zit het hoofdmodel alleen in zijn eigen keten en heeft het geen werk-items en geen releases,
-dan mogen keten en hoofdmodel samen weg. De cascade ruimt dan versies, actieve versies en
-koppelingen op. Submodellen en interfaces die het met andere ketens deelt, blijven staan.
+Heeft het hoofdmodel geen werk-items en geen releases, dan mogen keten en hoofdmodel
+samen weg. De cascade ruimt dan versies, aanwezigheid en koppelingen op. Submodellen en
+interfaces die het met andere ketens deelt, blijven staan.
 
 ```sql
 begin;
@@ -125,13 +129,15 @@ Draai daarna stap 4 nog eens: de lijsten "niet in de export" moeten leeg zijn.
 
 | Situatie | Actie |
 |---|---|
-| Nieuw model, nieuwe interface, versie, keten, node of edge | toevoegen |
-| Versie in de omgeving eronder al actief (in de tool of in de export) | promotie: release + activeren + werk-item `REVIEW` (ACC) of `DONE` (PROD) |
-| Andere versie, niet eronder gezien | registratie: alleen activeren |
-| Koppeling onder een actieve ouderversie wijkt af of ontbreekt | upsert vanuit de export |
-| Koppeling onder een actieve ouderversie die de export niet kent | verwijderen |
+| Nieuw model, nieuwe interface, versie of keten (hoofdmodel uit de Generic Model) | toevoegen |
+| Hoofdmodel in de omgeving eronder al actief (in de tool of in de export) | promotie via `apply_release`: release + activeren + werk-item `REVIEW` (ACC) of `DONE` (PROD) |
+| Hoofdmodel op een andere versie, niet eronder gezien | registratie: alleen aanwezig/actief zetten |
+| Koppeling onder een ingelezen ouderversie wijkt af of ontbreekt | `set_dependency` vanuit de export |
+| Koppeling onder een ingelezen ouderversie die de export niet kent | `remove_dependency` |
 | Koppelingen onder oude ouderversies | laten staan (historie) |
-| Model, keten of node niet meer in de export | alleen melden |
+| Model of keten niet meer in de export | alleen melden |
 
-Promoties volgen `promoteModel` in `src/lib/api.js`. Wijzigt die logica in de app, pas dan
-`maak_sql` in `tools/sync_export.py` mee aan.
+Submodelversies worden niet apart "actief gezet": in een keten draait een submodel op de
+versie die zijn ouder aanroept, en dat zit in de koppelingen. De databasefuncties staan in
+`supabase/migrations/014_rpcs.sql`; wijzigt die logica, pas dan `maak_sql` in
+`tools/sync_export.py` mee aan.

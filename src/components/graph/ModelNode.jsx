@@ -1,11 +1,11 @@
 import { Handle, Position } from 'reactflow'
-import { versieStatus, ENVS } from '../../lib/chainUtils.js'
+import { versieStatus, ENVS, STATUS_TEKEN } from '../../lib/chainUtils.js'
 import { MODEL_W } from './layout.js'
-import { ENV, ORANJE, VIOLET, ROOD } from '../../lib/kleuren.js'
+import { ENV, ORANJE, VIOLET, ROOD, GEEL } from '../../lib/kleuren.js'
 
 // Loopt een omgeving voor, dan krijgt hij zijn eigen kleur — zo zie je meteen
 // hóé ver iets is doorgezet. Achterlopen is altijd oranje, want dat is de
-// situatie die aandacht vraagt. Elke kleur is een familie uit lib/kleuren.js.
+// situatie die aandacht vraagt.
 function familieVan(env, status) {
   if (status === 'voor')   return ENV[env]
   if (status === 'achter') return ORANJE
@@ -13,19 +13,16 @@ function familieVan(env, status) {
   return null
 }
 
-const TEKEN = { voor: '↑', achter: '↓', anders: '≠' }
-
 export default function ModelNode({ data, selected }) {
   const isShared   = data.sharedIn?.length > 0
   const mistExport = data.ontbreekt?.length > 0
+  const werk       = data.openWerk?.[0]
 
   const statussen = Object.fromEntries(
     ENVS.map(env => [env, env === 'PROD' ? 'gelijk' : versieStatus(data.versions[env], data.versions.PROD)])
   )
   const afwijkend = ENVS.some(e => ['voor', 'achter', 'anders'].includes(statussen[e]))
 
-  // Gedeeld zijn is normaal en verdient geen randkleur; dat vertelt de badge
-  // onderin al. De rand is voor de versiestatus.
   const loopAchter = statussen.ACC === 'achter' || statussen.TST === 'achter'
   const rand = mistExport  ? ROOD
              : loopAchter  ? ORANJE
@@ -34,7 +31,8 @@ export default function ModelNode({ data, selected }) {
              : afwijkend   ? VIOLET
              : null
   const border = rand ? rand.ink : 'var(--line-strong)'
-  const glow   = rand ? `0 0 0 3px ${rand.line}, var(--shadow-1)` : 'var(--shadow-1)'
+  const glow   = data.opPad ? `0 0 0 3px var(--sel-bg-2), var(--shadow-2)`
+               : rand ? `0 0 0 3px ${rand.line}, var(--shadow-1)` : 'var(--shadow-1)'
 
   return (
     <div style={{
@@ -44,19 +42,36 @@ export default function ModelNode({ data, selected }) {
       borderRadius: 10,
       overflow: 'hidden',
       boxShadow: selected ? '0 0 0 3px var(--sel-bg-2), var(--shadow-3)' : glow,
+      opacity: data.gedimd ? 0.35 : 1,
+      transition: 'opacity 120ms',
     }}>
       <Handle type="target" position={Position.Left}  style={{ background: 'var(--line-strong)', border: 'none', width: 8, height: 8 }} />
       <Handle type="source" position={Position.Right} style={{ background: 'var(--line-strong)', border: 'none', width: 8, height: 8 }} />
 
-      <div style={{ background: 'var(--surface-2)', padding: '7px 10px 6px', borderBottom: '1px solid var(--line)' }}>
-        <div style={{ color: 'var(--ink)', fontSize: 11, fontWeight: 700, lineHeight: 1.3,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div style={{ background: 'var(--surface-2)', padding: '6px 10px 5px', borderBottom: '1px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ color: 'var(--ink)', fontSize: 11, fontWeight: 700, lineHeight: 1.3, flex: 1, minWidth: 0,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={data.label}>
           {data.label}
         </div>
+        {data.isWortel && (
+          <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--meta-ink)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            hoofd
+          </span>
+        )}
+        {data.variants > 1 && (
+          <span title="Dit model hangt in deze keten op meerdere versies" style={{ fontSize: 9, color: VIOLET.ink, fontWeight: 700 }}>
+            ×{data.variants}
+          </span>
+        )}
+        {isShared && (
+          <span title={`Ook gebruikt in: ${data.sharedIn.join(', ')}`}
+            style={{ color: VIOLET.ink, fontSize: 11, lineHeight: 1, fontWeight: 700 }}>⧉</span>
+        )}
       </div>
 
       {/* De versies zoals ze in deze keten worden aangeroepen */}
-      <div style={{ padding: '6px 10px 5px' }}>
+      <div style={{ padding: '5px 10px 4px' }}>
         {ENVS.map(env => {
           const v      = data.versions[env]
           const st     = statussen[env]
@@ -69,77 +84,47 @@ export default function ModelNode({ data, selected }) {
               padding: '2px 5px', borderRadius: 4, marginBottom: 1,
               background: opvall ? fam.bg : 'transparent',
             }}>
-              <span style={{ color: opvall ? kleur : 'var(--ink-3)', fontSize: 9, fontWeight: 700,
-                width: 30, flexShrink: 0, textTransform: 'uppercase', letterSpacing: 0.5 }}>{env}</span>
-              <span style={{ color: opvall ? kleur : 'var(--meta-ink)', fontSize: 10,
+              <span style={{ color: opvall ? kleur : ENV[env].ink, fontSize: 9, fontWeight: 700,
+                width: 30, flexShrink: 0, letterSpacing: 0.5 }}>{env}</span>
+              <span style={{ color: opvall ? kleur : (v ? 'var(--ink)' : 'var(--ink-4)'), fontSize: 10,
                 fontFamily: 'var(--mono)', fontWeight: opvall ? 700 : 400 }}>{v ?? '—'}</span>
-              {opvall && <span style={{ color: kleur, fontSize: 9, marginLeft: 'auto' }}>{TEKEN[st]}</span>}
+              {opvall && <span style={{ color: kleur, fontSize: 10, marginLeft: 'auto', fontWeight: 700 }}>{STATUS_TEKEN[st]}</span>}
             </div>
           )
         })}
       </div>
 
-      {/* Aangeroepen versie bestaat niet in de export van die omgeving */}
       {mistExport && (
-        <div style={{ borderTop: `1px solid ${ROOD.line}`, padding: '4px 10px 5px',
-          background: ROOD.bg, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ color: ROOD.ink, fontSize: 9 }}>⚠</span>
-          <span style={{ color: ROOD.ink, fontSize: 9, fontWeight: 600,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            versie niet in export ({data.ontbreekt.join(', ')})
-          </span>
-        </div>
+        <Regel familie={ROOD} teken="⚠" titel="Deze versie wordt wel aangeroepen maar kwam niet voor in de eCon-export">
+          ontbreekt in eCon ({data.ontbreekt.join(', ')})
+        </Regel>
       )}
 
-      {/* Opmerking bij het model: er moet iets mee gebeuren */}
       {data.notes?.trim() && (
-        <div title={data.notes} style={{ borderTop: `1px solid ${ORANJE.line}`, padding: '4px 10px 5px',
-          background: ORANJE.bg, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={ORANJE.ink} strokeWidth="2.5" style={{ flexShrink: 0 }}>
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          <span style={{ color: ORANJE.ink, fontSize: 9, fontWeight: 600,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {data.notes.trim()}
-          </span>
-        </div>
+        <Regel familie={ORANJE} teken="✎" titel={data.notes}>{data.notes.trim()}</Regel>
       )}
 
-      {data.workItem && (() => {
-        const klaar = data.workItem.status === 'DONE'
-        return (
-          <div style={{ borderTop: '1px solid var(--line-2)', padding: '4px 10px 5px',
-            display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-              background: klaar ? 'var(--ink-3)' : ENV.TST.ink }} />
-            {/* Ticket en beschrijving; zonder ticket de consultant, zodat je weet bij wie je moet zijn */}
-            <span style={{ color: klaar ? 'var(--ink-2)' : ENV.TST.ink, fontSize: 9, fontWeight: 600,
-              fontFamily: data.workItem.ticket ? 'var(--mono)' : undefined, flexShrink: 0 }}>
-              {data.workItem.ticket || data.workItem.consultant}
-            </span>
-            {data.workItem.note && (
-              <span title={data.workItem.note} style={{ color: 'var(--meta-ink)', fontSize: 9,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                — {data.workItem.note}
-              </span>
-            )}
-          </div>
-        )
-      })()}
-
-      {isShared && (
-        <div style={{ borderTop: `1px solid ${VIOLET.line}`, padding: '4px 10px 5px',
-          background: VIOLET.bg, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={VIOLET.ink} strokeWidth="2.5">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-          </svg>
-          <span style={{ color: VIOLET.ink, fontSize: 9, fontWeight: 600,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Gedeeld • {data.sharedIn.length} andere keten{data.sharedIn.length !== 1 ? 's' : ''}
-          </span>
-        </div>
+      {werk && (
+        <Regel familie={GEEL} teken="●" titel={`${werk.consultant}${werk.ticket ? ` · ${werk.ticket}` : ''}${werk.note ? ` · ${werk.note}` : ''}`}>
+          <span style={{ fontFamily: werk.ticket ? 'var(--mono)' : undefined }}>{werk.ticket || werk.consultant}</span>
+          {werk.ticket && <span style={{ color: 'var(--meta-ink)', fontWeight: 400 }}> · {werk.consultant}</span>}
+          {werk.note && <span style={{ color: 'var(--meta-ink)', fontWeight: 400 }}> · {werk.note}</span>}
+          {data.openWerk.length > 1 && <span style={{ color: 'var(--meta-ink)', fontWeight: 400 }}> +{data.openWerk.length - 1}</span>}
+        </Regel>
       )}
+    </div>
+  )
+}
+
+function Regel({ familie, teken, titel, children }) {
+  return (
+    <div title={titel} style={{ borderTop: `1px solid ${familie.line}`, padding: '3px 10px 4px',
+      background: familie.bg, display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ color: familie.ink, fontSize: 9, flexShrink: 0 }}>{teken}</span>
+      <span style={{ color: familie.ink, fontSize: 9, fontWeight: 600, minWidth: 0,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {children}
+      </span>
     </div>
   )
 }
