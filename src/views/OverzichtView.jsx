@@ -3,98 +3,61 @@ import { useSnapshot } from '../hooks/useSnapshot.jsx'
 import { ENVS, STATUS_CFG } from '../lib/chainUtils.js'
 import { datum, STATUS_LABEL } from '../lib/releasePlan.js'
 import { Chip, EnvChip, Spinner, Banner, Leeg } from '../components/ui/index.jsx'
-import { GEEL, BLAUW, ORANJE, GROEN, ROOD, VIOLET, GRIJS } from '../lib/kleuren.js'
+import { GEEL, BLAUW, ORANJE, ROOD, VIOLET } from '../lib/kleuren.js'
+
+// Het overzicht in drie lagen: hoe staat het ervoor (één strook), wat is er
+// onderweg (één tabel, per keten), en alle ketens (één lijst). Aandachtspunten
+// en activiteit staan er compact naast en klappen uit als je ze nodig hebt.
 
 const ACTIE_TEKEN = { register: '＋', release: '↑', rollback: '↶', delete_version: '×', set_dependency: '→', remove_dependency: '⤫' }
-
-// ─── Tegel ────────────────────────────────────────────────────────────────────
-function Tegel({ label, value, familie, actief, onClick }) {
-  return (
-    <button onClick={onClick}
-      className={`bg-card border rounded-xl px-4 py-3 text-left transition-colors ${actief ? 'border-accent' : 'border-line hover:border-line-2'}`}>
-      <div className="text-2xl font-bold" style={{ color: familie.ink }}>{value}</div>
-      <div className="text-meta text-xs mt-0.5">{label}</div>
-    </button>
-  )
-}
+const VOLGORDE = { BEIDE_OPEN: 0, KLAAR_VOOR_PROD: 1, IN_ONTWIKKELING: 2, LEEG: 3, STABIEL: 4 }
 
 // ─── Hoe ver is een versie ────────────────────────────────────────────────────
 function Voortgang({ snap, versionId }) {
   const envs = snap.presentEnvs(versionId)
   return (
-    <span className="flex gap-0.5">
+    <span className="inline-flex gap-0.5">
       {['TST', 'ACC', 'PROD'].map(e => (
-        <span key={e} className={`px-1 rounded text-[9px] font-bold ${envs.includes(e) ? '' : 'opacity-30'}`}
-          style={{ background: ENVS && (envs.includes(e) ? `var(--env-${e.toLowerCase()}-bg)` : 'var(--off-bg)'),
-                   color: envs.includes(e) ? `var(--env-${e.toLowerCase()})` : 'var(--ink-3)' }}>{e}</span>
+        <span key={e} className="px-1 rounded text-[9px] font-bold"
+          style={envs.includes(e)
+            ? { background: `var(--env-${e.toLowerCase()}-bg)`, color: `var(--env-${e.toLowerCase()})` }
+            : { background: 'var(--off-bg)', color: 'var(--ink-4)' }}>{e}</span>
       ))}
     </span>
   )
 }
 
-// ─── Ketenkaart ───────────────────────────────────────────────────────────────
-function ChainCard({ entry, onClick, onModel }) {
-  const { chain, stats } = entry
-  const cfg = stats.cfg
+function Kop({ titel, count, right }) {
   return (
-    <div className="group bg-card border border-line rounded-xl p-4 hover:border-line-2 transition-all w-full h-full flex flex-col"
-      style={{ borderLeft: `3px solid ${cfg.familie.ink}` }}>
-      <button onClick={onClick} className="text-left">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="text-ink font-semibold text-sm leading-snug flex-1 min-w-0 truncate">{chain.label}</div>
-          <svg className="w-4 h-4 text-ink-3 group-hover:text-ink-2 transition-colors shrink-0 mt-0.5"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path d="M5 12h14M12 5l7 7-7 7"/>
-          </svg>
-        </div>
-        <div className="mb-2 flex items-center gap-2 flex-wrap">
-          <Chip familie={cfg.familie} title={cfg.uitleg}>{cfg.label}</Chip>
-          {ENVS.map(e => stats.rootVersions[e]
-            ? <EnvChip key={e} env={e} className="font-mono"><span className="font-normal">{stats.rootVersions[e]}</span></EnvChip>
-            : <span key={e} className="px-1.5 py-0.5 rounded text-[10px] text-ink-4 border border-line/60">niet in {e}</span>)}
-        </div>
-      </button>
+    <header className="px-4 py-2.5 border-b border-line/80 flex items-center gap-2">
+      <h3 className="text-ink text-xs font-semibold">{titel}</h3>
+      {count !== undefined && <span className="text-ink-3 text-xs">{count}</span>}
+      {right && <div className="ml-auto">{right}</div>}
+    </header>
+  )
+}
 
-      {stats.opmerkingen.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {stats.opmerkingen.map(o => (
-            <button key={o.modelId} onClick={() => onModel(o.modelId)} className="w-full text-left flex items-start gap-1.5 text-xs rounded-md px-2 py-1"
-              style={{ background: ORANJE.bg, color: ORANJE.ink }} title={`${o.model}: ${o.tekst}`}>
-              <span className="shrink-0">✎</span>
-              <span className="min-w-0 line-clamp-2"><span className="font-semibold">{o.model}</span> — {o.tekst}</span>
-            </button>
-          ))}
-        </div>
-      )}
+function Paneel({ children, className = '' }) {
+  return <section className={`bg-card border border-line rounded-xl overflow-hidden ${className}`}>{children}</section>
+}
 
-      {stats.openWerk.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {stats.openWerk.map(w => (
-            <button key={w.id} onClick={() => onModel(w.modelId)} className="w-full text-left flex items-center gap-2 text-xs">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} />
-              <span className="text-ink truncate">{w.node.label}</span>
-              <span className="font-mono text-ink-3">{w.version}</span>
-              <span className="text-ink-3 truncate">{w.ticket ?? w.consultant}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 text-xs text-meta mt-auto pt-2 border-t border-line/50">
-        <span>{stats.models} modellen</span>
-        {stats.tstAfwijkend.length > 0 && <span style={{ color: GEEL.ink }}>{stats.tstAfwijkend.length} in TST anders dan ACC</span>}
-        {stats.accAfwijkend.length > 0 && <span style={{ color: BLAUW.ink }}>{stats.accAfwijkend.length} in ACC anders dan PROD</span>}
-        {stats.ontbreekt.length > 0 && <span style={{ color: ROOD.ink }}>⚠ {stats.ontbreekt.length}</span>}
-      </div>
-    </div>
+function RootChips({ stats }) {
+  return (
+    <span className="flex items-center gap-1 shrink-0">
+      {ENVS.map(e => stats.rootVersions[e]
+        ? <EnvChip key={e} env={e} className="font-mono"><span className="font-normal">{stats.rootVersions[e]}</span></EnvChip>
+        : <span key={e} className="px-1.5 py-0.5 rounded text-[10px] text-ink-4 border border-line/60">{e} —</span>)}
+    </span>
   )
 }
 
 // ─── Hoofd component ──────────────────────────────────────────────────────────
 export default function OverzichtView({ ga }) {
-  const { snap, ketens, loading, error } = useSnapshot()
+  const { snap, ketens, error } = useSnapshot()
   const [zoek, setZoek] = useState('')
-  const [filter, setFilter] = useState(null)   // null | status | 'AANDACHT'
+  const [filter, setFilter] = useState(null)
+  const [aandachtOpen, setAandachtOpen] = useState(false)
+  const [activiteitOpen, setActiviteitOpen] = useState(false)
 
   const naarModel = (modelId, voorkeurKeten) => {
     const keys = ketens.ketensVanModel(modelId)
@@ -102,136 +65,185 @@ export default function OverzichtView({ ga }) {
     if (key) ga({ tab: 'ketens', keten: key, model: modelId })
   }
 
+  // Lopende zaken: per keten die niet stabiel is, het hoofdmodel en het lopende werk
   const lopend = useMemo(() => {
-    if (!snap) return { werk: [], klaar: [], aandacht: [] }
-    const werk = snap.workItems.filter(w => w.status !== 'DONE')
-      .sort((a, b) => (a.status === 'REVIEW') - (b.status === 'REVIEW') || new Date(b.createdAt) - new Date(a.createdAt))
-    const klaar = ketens.lijst.filter(e => ['KLAAR_VOOR_PROD', 'BEIDE_OPEN'].includes(e.stats.status))
+    if (!snap) return []
+    const gezien = new Set()
+    const groepen = ketens.lijst
+      .filter(e => e.stats.status !== 'STABIEL')
+      .sort((a, b) => VOLGORDE[a.stats.status] - VOLGORDE[b.stats.status] || a.chain.label.localeCompare(b.chain.label))
+      .map(e => ({ ...e, werk: e.stats.openWerk.filter(w => { if (gezien.has(w.id)) return false; gezien.add(w.id); return true }) }))
+    // Werk aan versies die in geen enkele keten draaien
+    const los = snap.workItems.filter(w => w.status !== 'DONE' && !gezien.has(w.id))
+    return los.length ? [...groepen, { chain: null, werk: los }] : groepen
+  }, [snap, ketens])
 
-    const aandacht = []
+  const aandacht = useMemo(() => {
+    if (!snap) return []
+    const lijst = []
     for (const e of ketens.lijst) {
-      for (const m of e.stats.meerdereVersies) aandacht.push({ soort: 'meerdere', tekst: `${m.model} draait in ${e.chain.label} op ${m.versies.length} versies naast elkaar (${m.versies.join(', ')}) in ${m.envs.join(', ')}`, modelId: m.modelId, keten: e.chain.key })
-      for (const o of e.stats.ontbreekt) aandacht.push({ soort: 'ontbreekt', tekst: `${o.model}: aangeroepen versie ontbreekt in eCon (${o.envs.join(', ')})`, modelId: o.modelId, keten: e.chain.key })
-      for (const env of e.stats.nietIn) if (env !== 'TST' || e.stats.nietIn.length < 3) aandacht.push({ soort: 'nietin', tekst: `${e.chain.label} draait niet in ${env}`, modelId: e.chain.rootModelId, keten: e.chain.key })
+      for (const m of e.stats.meerdereVersies) lijst.push({ soort: 'meerdere', keten: e.chain, modelId: m.modelId, tekst: `${m.model} draait op ${m.versies.length} versies naast elkaar (${m.versies.join(', ')})` })
+      for (const o of e.stats.ontbreekt) lijst.push({ soort: 'ontbreekt', keten: e.chain, modelId: o.modelId, tekst: `${o.model}: aangeroepen versie ontbreekt in eCon (${o.envs.join(', ')})` })
+      for (const o of e.stats.opmerkingen) lijst.push({ soort: 'opmerking', keten: e.chain, modelId: o.modelId, tekst: `${o.model}: ${o.tekst}` })
+      if (e.stats.status === 'LEEG') lijst.push({ soort: 'nietin', keten: e.chain, modelId: e.chain.rootModelId, tekst: 'draait nergens' })
     }
-    for (const w of snap.workItems.filter(w => w.status === 'DONE')) {
-      if (!snap.isPresent(w.versionId, 'PROD')) aandacht.push({ soort: 'werk', tekst: `Werk aan ${w.modelName} ${w.version} is afgerond, maar die versie staat niet in PROD`, modelId: w.modelId })
+    for (const w of snap.workItems.filter(w => w.status === 'DONE' && !snap.isPresent(w.versionId, 'PROD'))) {
+      lijst.push({ soort: 'werk', keten: null, modelId: w.modelId, tekst: `${w.modelName} ${w.version}: werk afgerond, maar de versie staat niet in PROD` })
     }
-    for (const e of ketens.lijst) for (const o of e.stats.opmerkingen) aandacht.push({ soort: 'opmerking', tekst: `${o.model}: ${o.tekst}`, modelId: o.modelId, keten: e.chain.key })
-    return { werk, klaar, aandacht }
+    return lijst
   }, [snap, ketens])
 
   if (!snap || !ketens) return error ? <div className="p-6"><Banner ok={false}>{error}</Banner></div> : <Spinner tekst="Ketens laden…" />
 
   const telling = s => ketens.lijst.filter(e => e.stats.status === s).length
   const term = zoek.toLowerCase()
-  const zichtbaar = ketens.lijst.filter(e =>
-    (!filter || filter === 'AANDACHT' || e.stats.status === filter) &&
-    (!term || e.chain.label.toLowerCase().includes(term) || e.graaf.nodes.some(n => n.label.toLowerCase().includes(term))))
+  const zichtbaar = ketens.lijst
+    .filter(e => !filter || e.stats.status === filter)
+    .filter(e => !term || e.chain.label.toLowerCase().includes(term) || e.graaf.nodes.some(n => n.label.toLowerCase().includes(term)))
+    .sort((a, b) => VOLGORDE[a.stats.status] - VOLGORDE[b.stats.status] || a.chain.label.localeCompare(b.chain.label))
+
+  const statusChip = s => {
+    const n = telling(s)
+    if (!n && s !== 'STABIEL') return null
+    const cfg = STATUS_CFG[s]
+    const actief = filter === s
+    return (
+      <button key={s} onClick={() => setFilter(f => f === s ? null : s)} title={cfg.uitleg}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${actief ? 'border-accent' : 'border-transparent hover:border-line-2'}`}
+        style={{ background: cfg.familie.bg, color: cfg.familie.ink }}>
+        <span className="font-bold">{n}</span>{cfg.label}
+      </button>
+    )
+  }
+
+  const lopendTotaal = lopend.reduce((n, g) => n + g.werk.length + (g.chain ? 1 : 0), 0)
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Tegel label="Ketens" value={ketens.lijst.length} familie={GRIJS} actief={filter === null} onClick={() => setFilter(null)} />
-          <Tegel label="Stabiel" value={telling('STABIEL')} familie={GROEN} actief={filter === 'STABIEL'} onClick={() => setFilter(f => f === 'STABIEL' ? null : 'STABIEL')} />
-          <Tegel label="In ontwikkeling" value={telling('IN_ONTWIKKELING') + telling('BEIDE_OPEN')} familie={GEEL} actief={filter === 'IN_ONTWIKKELING'} onClick={() => setFilter(f => f === 'IN_ONTWIKKELING' ? null : 'IN_ONTWIKKELING')} />
-          <Tegel label="Klaar voor PROD" value={telling('KLAAR_VOOR_PROD') + telling('BEIDE_OPEN')} familie={BLAUW} actief={filter === 'KLAAR_VOOR_PROD'} onClick={() => setFilter(f => f === 'KLAAR_VOOR_PROD' ? null : 'KLAAR_VOOR_PROD')} />
-          <Tegel label="Aandachtspunten" value={lopend.aandacht.length} familie={lopend.aandacht.length ? ORANJE : GRIJS} actief={filter === 'AANDACHT'} onClick={() => setFilter(f => f === 'AANDACHT' ? null : 'AANDACHT')} />
+      <div className="max-w-5xl mx-auto px-6 py-5 space-y-5">
+
+        {/* Hoe staat het ervoor */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-ink text-sm font-semibold mr-1">{ketens.lijst.length} ketens</span>
+          {statusChip('STABIEL')}
+          {statusChip('IN_ONTWIKKELING')}
+          {statusChip('KLAAR_VOOR_PROD')}
+          {statusChip('BEIDE_OPEN')}
+          {statusChip('LEEG')}
+          {filter && <button onClick={() => setFilter(null)} className="text-ink-3 hover:text-ink text-xs">filter weg ×</button>}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_20rem] items-start">
-          {/* Lopende zaken */}
-          <section className="bg-card border border-line rounded-xl overflow-hidden">
-            <header className="px-4 py-2.5 border-b border-line/80 flex items-center gap-2">
-              <h3 className="text-ink text-xs font-semibold">Lopende zaken</h3>
-              <span className="text-ink-3 text-xs">{lopend.werk.length + lopend.klaar.length}</span>
-            </header>
-            <div className="divide-y divide-line/40 max-h-[26rem] overflow-y-auto">
-              {lopend.werk.length === 0 && lopend.klaar.length === 0 && <Leeg className="px-4 py-6 text-center">Niets onderweg. Alles draait zoals het in PROD staat.</Leeg>}
-              {lopend.klaar.map(e => (
-                <button key={e.chain.key} onClick={() => ga({ tab: 'ketens', keten: e.chain.key })}
-                  className="w-full text-left px-4 py-2 hover:bg-hover flex items-center gap-2 text-xs">
-                  <Chip familie={BLAUW}>Klaar voor PROD</Chip>
-                  <span className="text-ink truncate">{e.chain.label}</span>
-                  <span className="ml-auto font-mono text-ink-3">{e.stats.rootVersions.ACC} → PROD</span>
+        {/* Wat is er onderweg */}
+        <Paneel>
+          <Kop titel="Lopende zaken" count={lopendTotaal} />
+          {lopend.length === 0 && <Leeg className="px-4 py-6 text-center">Niets onderweg. Alles draait zoals het in PROD staat.</Leeg>}
+          {lopend.map(g => (
+            <div key={g.chain?.key ?? 'los'} className="border-b border-line/40 last:border-b-0">
+              {g.chain ? (
+                <button onClick={() => ga({ tab: 'ketens', keten: g.chain.key })}
+                  className="w-full text-left px-4 py-2 hover:bg-hover flex items-center gap-3 text-xs">
+                  <span className="text-ink font-semibold truncate">{g.chain.label}</span>
+                  <Chip familie={g.stats.cfg.familie} title={g.stats.cfg.uitleg}>{g.stats.cfg.label}</Chip>
+                  <span className="ml-auto"><RootChips stats={g.stats} /></span>
                 </button>
-              ))}
-              {lopend.werk.map(w => (
-                <button key={w.id} onClick={() => naarModel(w.modelId)}
-                  className="w-full text-left px-4 py-2 hover:bg-hover flex items-center gap-2 text-xs">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} title={STATUS_LABEL[w.status]} />
-                  <span className="text-ink truncate">{w.modelName}</span>
-                  <span className="font-mono text-ink-3 shrink-0">{w.version}</span>
-                  <span className="text-ink-2 truncate">{w.consultant}</span>
-                  {w.ticket && <span className="font-mono text-ink-3 shrink-0">{w.ticket}</span>}
-                  <span className="ml-auto shrink-0"><Voortgang snap={snap} versionId={w.versionId} /></span>
+              ) : (
+                <div className="px-4 py-2 text-xs text-ink-3">Werk aan versies die nu nergens in een keten draaien</div>
+              )}
+              {g.werk.map(w => (
+                <button key={w.id} onClick={() => naarModel(w.modelId, g.chain?.key)}
+                  className="w-full text-left pl-8 pr-4 py-1.5 hover:bg-hover grid grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] items-center gap-x-3 text-xs">
+                  <span className="min-w-0 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full inline-block mr-2 align-middle" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} title={STATUS_LABEL[w.status]} />
+                    <span className="text-ink">{w.modelName}</span>
+                    <span className="font-mono text-ink-3 ml-2">{w.version}</span>
+                    {w.note && <span className="text-ink-3 ml-2">· {w.note}</span>}
+                  </span>
+                  <span className="text-ink-2">{w.consultant}</span>
+                  <span className="font-mono text-ink-3 w-24 text-right">{w.ticket ?? ''}</span>
+                  <span className="text-ink-3 w-20 text-right">{STATUS_LABEL[w.status]}</span>
+                  <Voortgang snap={snap} versionId={w.versionId} />
                 </button>
               ))}
             </div>
-          </section>
+          ))}
+        </Paneel>
 
-          {/* Aandachtspunten */}
-          <section className="bg-card border border-line rounded-xl overflow-hidden">
-            <header className="px-4 py-2.5 border-b border-line/80 flex items-center gap-2">
-              <h3 className="text-ink text-xs font-semibold">Aandachtspunten</h3>
-              <span className="text-ink-3 text-xs">{lopend.aandacht.length}</span>
-            </header>
-            <div className="divide-y divide-line/40 max-h-[26rem] overflow-y-auto">
-              {lopend.aandacht.length === 0 && <Leeg className="px-4 py-6 text-center">Geen aandachtspunten.</Leeg>}
-              {lopend.aandacht.map((a, i) => (
-                <button key={i} onClick={() => naarModel(a.modelId, a.keten)}
-                  className="w-full text-left px-4 py-2 hover:bg-hover flex items-start gap-2 text-xs">
-                  <span className="shrink-0 mt-0.5" style={{ color: a.soort === 'ontbreekt' ? ROOD.ink : a.soort === 'meerdere' ? VIOLET.ink : ORANJE.ink }}>
+        {/* Aandachtspunten en activiteit, compact */}
+        <div className="grid gap-4 md:grid-cols-2 items-start">
+          <Paneel>
+            <Kop titel="Aandachtspunten" count={aandacht.length}
+              right={aandacht.length > 4 && (
+                <button onClick={() => setAandachtOpen(o => !o)} className="text-meta hover:text-ink text-xs">{aandachtOpen ? 'Inklappen' : `Toon alle ${aandacht.length}`}</button>
+              )} />
+            {aandacht.length === 0 && <Leeg className="px-4 py-4 text-center">Geen aandachtspunten.</Leeg>}
+            <div className="divide-y divide-line/40">
+              {(aandachtOpen ? aandacht : aandacht.slice(0, 4)).map((a, i) => (
+                <button key={i} onClick={() => naarModel(a.modelId, a.keten?.key)}
+                  className="w-full text-left px-4 py-1.5 hover:bg-hover flex items-start gap-2 text-xs">
+                  <span className="shrink-0 mt-px" style={{ color: a.soort === 'ontbreekt' ? ROOD.ink : a.soort === 'meerdere' ? VIOLET.ink : ORANJE.ink }}>
                     {a.soort === 'ontbreekt' ? '⚠' : a.soort === 'meerdere' ? '×' : a.soort === 'opmerking' ? '✎' : '•'}
                   </span>
-                  <span className="text-ink-2 min-w-0">{a.tekst}</span>
+                  <span className="min-w-0">
+                    {a.keten && <span className="text-ink-3">{a.keten.label} · </span>}
+                    <span className="text-ink-2">{a.tekst}</span>
+                  </span>
                 </button>
               ))}
             </div>
-          </section>
+          </Paneel>
 
-          {/* Recente activiteit */}
-          <section className="bg-card border border-line rounded-xl overflow-hidden">
-            <header className="px-4 py-2.5 border-b border-line/80 flex items-center gap-2">
-              <h3 className="text-ink text-xs font-semibold">Recente activiteit</h3>
-            </header>
-            <div className="divide-y divide-line/40 max-h-[26rem] overflow-y-auto">
-              {snap.activity.length === 0 && <Leeg className="px-4 py-6 text-center">Nog niets gelogd. Elke actie in de tool komt hier.</Leeg>}
-              {snap.activity.slice(0, 40).map(a => (
+          <Paneel>
+            <Kop titel="Recente activiteit"
+              right={snap.activity.length > 5 && (
+                <button onClick={() => setActiviteitOpen(o => !o)} className="text-meta hover:text-ink text-xs">{activiteitOpen ? 'Inklappen' : 'Toon meer'}</button>
+              )} />
+            {snap.activity.length === 0 && <Leeg className="px-4 py-4 text-center">Nog niets gelogd. Elke actie in de tool komt hier.</Leeg>}
+            <div className="divide-y divide-line/40">
+              {snap.activity.slice(0, activiteitOpen ? 40 : 5).map(a => (
                 <button key={a.id} onClick={() => a.modelId ? naarModel(a.modelId) : a.logId ? ga({ tab: 'releases' }) : null}
-                  className="w-full text-left px-4 py-2 hover:bg-hover text-xs">
-                  <div className="flex items-center gap-2 text-ink-3 text-[11px]">
-                    <span>{ACTIE_TEKEN[a.action] ?? '·'}</span>
-                    <span className="text-ink-2 font-medium">{a.user.split('@')[0]}</span>
-                    <span title={new Date(a.at).toLocaleString('nl-NL')}>{datum(a.at, true)}</span>
-                  </div>
-                  <div className="text-ink mt-0.5 break-words">{a.summary}</div>
+                  className="w-full text-left px-4 py-1.5 hover:bg-hover text-xs flex items-start gap-2">
+                  <span className="text-ink-3 w-4 shrink-0 text-center">{ACTIE_TEKEN[a.action] ?? '·'}</span>
+                  <span className="min-w-0">
+                    <span className="text-ink break-words">{a.summary}</span>
+                    <span className="text-ink-3 ml-2 whitespace-nowrap">{a.user.split('@')[0]} · {datum(a.at, true)}</span>
+                  </span>
                 </button>
               ))}
             </div>
-          </section>
+          </Paneel>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative max-w-xs flex-1">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-meta" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            <input data-zoekveld placeholder="Zoek keten of model…" value={zoek} onChange={e => setZoek(e.target.value)}
-              className="w-full bg-card border border-line rounded-lg pl-9 pr-3 py-2 text-ink text-sm focus:outline-none focus:border-accent placeholder-ink-3" />
+        {/* Alle ketens */}
+        <Paneel>
+          <Kop titel="Ketens" count={zichtbaar.length}
+            right={
+              <div className="relative">
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-meta" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input data-zoekveld placeholder="Zoek keten of model…" value={zoek} onChange={e => setZoek(e.target.value)}
+                  className="w-56 bg-page border border-line rounded-lg pl-8 pr-3 py-1 text-ink text-xs focus:outline-none focus:border-accent placeholder-ink-3" />
+              </div>
+            } />
+          {zichtbaar.length === 0 && <Leeg className="px-4 py-6 text-center">Geen ketens gevonden</Leeg>}
+          <div className="divide-y divide-line/40">
+            {zichtbaar.map(({ chain, stats }) => (
+              <button key={chain.key} onClick={() => ga({ tab: 'ketens', keten: chain.key })}
+                className="w-full text-left px-4 py-2 hover:bg-hover grid grid-cols-[minmax(0,1fr)_8.5rem_auto_auto] items-center gap-x-3 text-xs">
+                <span className="min-w-0 truncate">
+                  <span className="text-ink font-medium">{chain.label}</span>
+                  <span className="text-ink-3 ml-2">{stats.models} modellen</span>
+                  {stats.openWerk.length > 0 && <span className="text-ink-3 ml-2">· {stats.openWerk.length} werk</span>}
+                  {stats.opmerkingen.length > 0 && <span className="ml-2" style={{ color: ORANJE.ink }} title={stats.opmerkingen.map(o => `${o.model}: ${o.tekst}`).join('\n')}>✎</span>}
+                  {stats.ontbreekt.length > 0 && <span className="ml-2" style={{ color: ROOD.ink }} title="Aangeroepen versie ontbreekt in eCon">⚠</span>}
+                </span>
+                <span><Chip familie={stats.cfg.familie} title={stats.cfg.uitleg}>{stats.cfg.label}</Chip></span>
+                <RootChips stats={stats} />
+                <svg className="w-4 h-4 text-ink-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            ))}
           </div>
-          {filter && filter !== 'AANDACHT' && <Chip familie={STATUS_CFG[filter].familie}>{STATUS_CFG[filter].label} ×</Chip>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 items-stretch">
-          {zichtbaar.map(e => (
-            <ChainCard key={e.chain.key} entry={e}
-              onClick={() => ga({ tab: 'ketens', keten: e.chain.key })}
-              onModel={modelId => ga({ tab: 'ketens', keten: e.chain.key, model: modelId })} />
-          ))}
-          {zichtbaar.length === 0 && <div className="col-span-2 text-center py-12 text-ink-3 text-sm">Geen ketens gevonden</div>}
-        </div>
+        </Paneel>
       </div>
     </div>
   )
