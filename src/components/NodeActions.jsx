@@ -59,6 +59,8 @@ export default function NodeActions({ modelName, modelId, versions, aanroepers =
         modelName, envName: 'TST', version: versie.trim(), consultant: cons.trim(),
         note: note.trim(), ticket: regTicket.trim(),
         aanroepers: tstAanroepers.map(a => ({ modelId: a.modelId, version: a.versions.TST })),
+        // De versie die deze node tot nu toe draaide, om zijn koppelingen van over te nemen
+        vorige: ['TST', 'ACC', 'PROD'].map(env => ({ env, version: versions[env] })).find(v => v.version),
       })
       setMsg({ ok: true, text: `${versie.trim()} geregistreerd in TST` })
       setVersie(versieVanVandaag()); setCons(voornaam); setNote(''); setRegTicket(''); setOpenKaart(null)
