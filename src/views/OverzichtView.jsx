@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import { useSnapshot } from '../hooks/useSnapshot.jsx'
 import { ENVS, STATUS_CFG } from '../lib/chainUtils.js'
-import { datum, STATUS_LABEL } from '../lib/releasePlan.js'
+import { datum } from '../lib/releasePlan.js'
 import { Chip, EnvChip, Spinner, Banner, Leeg } from '../components/ui/index.jsx'
 import { GEEL, BLAUW, ORANJE, GROEN, ROOD, VIOLET, GRIJS } from '../lib/kleuren.js'
 
-// Bovenaan de tegels en de kaarten per keten; daaronder lopende zaken,
-// aandachtspunten en activiteit als blokken in dezelfde kaartstijl.
+// Bovenaan de tegels en de kaarten per keten; daaronder aandachtspunten en
+// activiteit als blokken in dezelfde kaartstijl.
 
 const ACTIE_TEKEN = { register: '＋', release: '↑', rollback: '↶', delete_version: '×', set_dependency: '→', remove_dependency: '⤫' }
 const VOLGORDE = { BEIDE_OPEN: 0, KLAAR_VOOR_PROD: 1, IN_ONTWIKKELING: 2, LEEG: 3, STABIEL: 4 }
@@ -19,21 +19,6 @@ function Tegel({ label, value, familie, actief, onClick }) {
       <div className="text-2xl font-bold" style={{ color: familie.ink }}>{value}</div>
       <div className="text-meta text-xs mt-0.5">{label}</div>
     </button>
-  )
-}
-
-// ─── Hoe ver is een versie ────────────────────────────────────────────────────
-function Voortgang({ snap, versionId }) {
-  const envs = snap.presentEnvs(versionId)
-  return (
-    <span className="inline-flex gap-0.5">
-      {['TST', 'ACC', 'PROD'].map(e => (
-        <span key={e} className="px-1 rounded text-[9px] font-bold"
-          style={envs.includes(e)
-            ? { background: `var(--env-${e.toLowerCase()}-bg)`, color: `var(--env-${e.toLowerCase()})` }
-            : { background: 'var(--off-bg)', color: 'var(--ink-4)' }}>{e}</span>
-      ))}
-    </span>
   )
 }
 
@@ -131,17 +116,6 @@ export default function OverzichtView({ ga }) {
     if (key) ga({ tab: 'ketens', keten: key, model: modelId })
   }
 
-  const lopend = useMemo(() => {
-    if (!snap) return []
-    const gezien = new Set()
-    const groepen = ketens.lijst
-      .filter(e => e.stats.status !== 'STABIEL')
-      .sort((a, b) => VOLGORDE[a.stats.status] - VOLGORDE[b.stats.status] || a.chain.label.localeCompare(b.chain.label))
-      .map(e => ({ ...e, werk: e.stats.openWerk.filter(w => { if (gezien.has(w.id)) return false; gezien.add(w.id); return true }) }))
-    const los = snap.workItems.filter(w => w.status !== 'DONE' && !gezien.has(w.id))
-    return los.length ? [...groepen, { chain: null, werk: los }] : groepen
-  }, [snap, ketens])
-
   const aandacht = useMemo(() => {
     if (!snap) return []
     const lijst = []
@@ -166,7 +140,6 @@ export default function OverzichtView({ ga }) {
     .filter(e => !term || e.chain.label.toLowerCase().includes(term) || e.graaf.nodes.some(n => n.label.toLowerCase().includes(term)))
     .sort((a, b) => VOLGORDE[a.stats.status] - VOLGORDE[b.stats.status] || a.chain.label.localeCompare(b.chain.label))
 
-  const lopendTotaal = lopend.reduce((n, g) => n + g.werk.length, 0)
   const AANDACHT_KORT = 5
 
   return (
@@ -199,41 +172,6 @@ export default function OverzichtView({ ga }) {
           ))}
           {zichtbaar.length === 0 && <div className="col-span-2 text-center py-12 text-ink-3 text-sm">Geen ketens gevonden</div>}
         </div>
-
-        {/* Lopende zaken, in dezelfde kaartstijl */}
-        <Blok titel="Lopende zaken" count={lopendTotaal} familie={lopendTotaal ? GEEL : GRIJS}>
-          {lopend.length === 0 && <Leeg>Niets onderweg. Alles draait zoals het in PROD staat.</Leeg>}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
-            {lopend.map(g => (
-              <div key={g.chain?.key ?? 'los'}>
-                {g.chain ? (
-                  <button onClick={() => ga({ tab: 'ketens', keten: g.chain.key })} className="flex items-center gap-2 mb-1 text-left">
-                    <span className="text-ink font-semibold text-xs truncate">{g.chain.label}</span>
-                    <Chip familie={g.stats.cfg.familie} title={g.stats.cfg.uitleg}>{g.stats.cfg.label}</Chip>
-                  </button>
-                ) : (
-                  <div className="text-ink-3 text-xs mb-1">Werk aan versies die nu nergens in een keten draaien</div>
-                )}
-                <div className="space-y-1">
-                  {g.werk.length === 0 && <div className="text-ink-3 text-xs pl-3">Geen lopend werk; alleen de versies verschillen.</div>}
-                  {g.werk.map(w => (
-                    <button key={w.id} onClick={() => naarModel(w.modelId, g.chain?.key)} className="w-full text-left flex items-center gap-2 text-xs pl-3" title={w.note ?? ''}>
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: w.status === 'REVIEW' ? BLAUW.ink : GEEL.ink }} />
-                      <span className="text-ink truncate">{w.modelName}</span>
-                      <span className="font-mono text-ink-3 shrink-0">{w.version}</span>
-                      <span className="text-ink-2 shrink-0">{w.consultant}</span>
-                      {w.ticket && <span className="font-mono text-ink-3 shrink-0">{w.ticket}</span>}
-                      <span className="ml-auto shrink-0 flex items-center gap-2">
-                        <span className="text-ink-3">{STATUS_LABEL[w.status]}</span>
-                        <Voortgang snap={snap} versionId={w.versionId} />
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Blok>
 
         <div className="grid gap-3 md:grid-cols-2 items-start">
           <Blok titel="Aandachtspunten" count={aandacht.length} familie={aandacht.length ? ORANJE : GRIJS}
